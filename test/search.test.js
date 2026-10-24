@@ -1,9 +1,10 @@
 // Search, held to the failures it was rebuilt for.
 //
 // Through 1.2.0 a search was one substring match of the whole query. Replayed
-// against the brains of the public benchmark (sekhonlabs/exposurie-bench), 20
-// of the 61 searches agents actually typed came back empty, nearly all of them
-// because they were several words. In the benchmark's long task a fresh session
+// against the brains of the public benchmark (sekhonlabs/exposurie-bench), 23
+// of the 61 searches agents actually typed came back empty: 6 rightly, for things
+// the brain was never told, and 17 only because they were several words. In the
+// benchmark's long task a fresh session
 // searched three times, got nothing three times, was told to say so plainly,
 // and went on without rules its brain held on pages titled with the very words
 // it had searched for. Every test below is one of those shapes, or a guard on a

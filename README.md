@@ -590,12 +590,12 @@ is built for the way agents actually search: a handful of keywords.
 
 **Why it changed.** Through 1.2.0 a search was one substring match of the whole
 query. Replayed against the [public benchmark](https://github.com/sekhonlabs/exposurie-bench)'s
-brains, 20 of the 61 searches agents actually ran came back empty — nearly all
-of them because they were several words. In its long task, a fresh session after
-a sync searched three times, got nothing three times, and went on without rules
-its brain held on a page titled with the words it had searched for. The same 61
-searches now come back empty 6 times, each one a question the brain was never
-told the answer to.
+brains, 23 of the 61 searches agents actually ran came back empty. Six of those
+were right: questions the brain was never told the answer to. The other 17
+failed only because they were several words. In its long task, a fresh session
+after a sync searched three times, got nothing three times, and went on without
+rules its brain held on a page titled with the words it had searched for. The
+same 61 searches now come back empty 6 times, and they are those six.
 
 ## Platforms and clients
 

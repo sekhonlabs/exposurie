@@ -5,8 +5,9 @@
 // a handful of keywords — "dead letter replay deliveries cleanup" — and a page
 // can hold every one of those words without holding that exact string. Replayed
 // against the brains in the public benchmark (github.com/sekhonlabs/exposurie-bench),
-// 20 of the 61 searches agents ran came back with zero pages, nearly all of them
-// multi-word. In the benchmark's long task, a fresh session after a sync searched
+// 23 of the 61 searches agents ran came back with zero pages: 6 rightly, for
+// things the brain was never told, and 17 only because they were several words.
+// In the benchmark's long task, a fresh session after a sync searched
 // three times, got zero three times, was told "Nothing in the brain matches. Say
 // so plainly", and went on without four rules its brain held on pages whose
 // titles contained the very words it had searched for. The sync had done its job.
