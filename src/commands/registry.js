@@ -36,7 +36,7 @@ export const COMMANDS = {
     run: (v) => sync({ done: v.done, abort: v.abort, at: v.at }),
   },
   read: {
-    summary: 'open a page, one section of it, or find which page holds a thing',
+    summary: 'open a page or one section of it, list every page, or find a thing by its words',
     run: (v, pos) => read(v, pos),
   },
   decline: {
@@ -154,15 +154,19 @@ export function helpText() {
     // stays abandoned because the layout should not depend on that never
     // coming back.
     ...[
+      ['', 'every page, by title'],
       ['"<page>"', 'the page, or a map if large'],
       ['"<page>" --section "<name>"', 'one section of it'],
       ['"<page>" --outline', 'the map, whatever the size'],
       ['"<page>" --full', 'the whole page regardless'],
-      ['--search "<query>"', 'which page holds a thing'],
-    ].flatMap(([args, what]) => [`  ${cmd('read')} ${args}`, `      ${what}`]),
+      ['--search "<words>"', 'the pages that hold them, best first'],
+    ].flatMap(([args, what]) => [`  ${cmd('read')}${args ? ` ${args}` : ''}`, `      ${what}`]),
     '',
     '  A large page returns a MAP, not the page — every line of it carries the',
     '  exact command that opens that section. You never have to build one.',
+    '',
+    '  A search takes words, in any order and any form, and prints the best',
+    '  matches as the brain wrote them. Each result says which words it lacks.',
     '',
     'LEAVING',
     // Built through cmd() rather than written as a literal, and on a line of

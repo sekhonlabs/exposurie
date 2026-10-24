@@ -33,9 +33,9 @@
 // actually matters is not that pages stay small but that nothing becomes
 // unreachable. Those are different goals and only the second one is real.
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import { categoryDirs } from './vault.js';
+import { categoryEntries } from './vault.js';
 import { cmd, q } from './install.js';
 
 /**
@@ -64,7 +64,7 @@ export function sectionCmd(title, heading, nth) {
 }
 
 /**
- * Every markdown file in the brain, as { title, path }.
+ * Every markdown file in the brain, as { title, path, category }.
  *
  * Reads the seam's category paths rather than hardcoding folder names, because
  * a user who renames `entities` to `people` must not silently lose half their
@@ -72,7 +72,7 @@ export function sectionCmd(title, heading, nth) {
  */
 export function allPages(vault, seam) {
   const out = [];
-  const walk = (dir) => {
+  const walk = (dir, category) => {
     if (!existsSync(dir)) return;
     let entries;
     try {
@@ -82,11 +82,43 @@ export function allPages(vault, seam) {
     }
     for (const e of entries) {
       const p = join(dir, e.name);
-      if (e.isDirectory()) walk(p);
-      else if (e.name.endsWith('.md')) out.push({ title: basename(e.name, '.md'), path: p });
+      if (e.isDirectory()) walk(p, category);
+      else if (e.name.endsWith('.md')) out.push({ title: basename(e.name, '.md'), path: p, category });
     }
   };
-  for (const d of categoryDirs(vault, seam)) walk(d);
+  for (const c of categoryEntries(vault, seam)) walk(c.dir, c.name);
+  return out;
+}
+
+/** Accent- and case-blind form of any text. "Inês" and "ines" are one word. */
+export function fold(s) {
+  return String(s).normalize('NFKD').replace(/\p{M}+/gu, '').toLowerCase();
+}
+
+/**
+ * A name as a person types it rather than as it is spelled: accents, case and
+ * every run of punctuation gone. A hyphen typed for an em-dash, "Ines" for
+ * "Inês", `[[brackets]]` copied from a page — all the same name.
+ *
+ * Only ever a SECOND try. Every command this tool prints carries the exact
+ * name, and the exact match is tried first, so two names that fold together
+ * ("C++ Notes", "C Notes") can never make a printed command ambiguous.
+ */
+export function loose(s) {
+  return fold(s).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+/** The pages a page links to, by name, in the order they first appear. */
+export function links(text) {
+  const out = [];
+  const seen = new Set();
+  for (const m of String(text).matchAll(/\[\[([^\]|#\n]+)(?:[#|][^\]\n]*)?\]\]/g)) {
+    const name = m[1].trim();
+    const k = name.toLowerCase();
+    if (!name || seen.has(k)) continue;
+    seen.add(k);
+    out.push(name);
+  }
   return out;
 }
 
@@ -131,7 +163,14 @@ export function headings(text) {
 export function findSection(heads, query, nth) {
   const want = String(query).trim().toLowerCase();
   const exact = heads.filter((h) => h.text.trim().toLowerCase() === want);
-  const pool = exact.length ? exact : heads.filter((h) => h.text.toLowerCase().includes(want));
+  let pool = exact.length ? exact : heads.filter((h) => h.text.toLowerCase().includes(want));
+  // Typed loosely — a hyphen for the em-dash, no accent. Tried only after the
+  // name as written has missed, so no printed command can land here.
+  if (pool.length === 0 && loose(query)) {
+    const lw = loose(query);
+    const same = heads.filter((h) => loose(h.text) === lw);
+    pool = same.length ? same : heads.filter((h) => loose(h.text).includes(lw));
+  }
   if (pool.length === 0) return { hit: null, candidates: [] };
   if (pool.length === 1) return { hit: pool[0], candidates: pool };
   if (nth && pool[nth - 1]) return { hit: pool[nth - 1], candidates: pool };
@@ -215,39 +254,3 @@ export function outlineBlock(title, text, heads) {
   return out;
 }
 
-/**
- * Search. Returns the page, the section the hit lives in, and the command.
- *
- * Returning only the page would be the same mistake as an outline without
- * commands: the agent's next act is always to open the part that matched, so
- * anything short of the section and its invocation leaves work on the floor.
- */
-export function search(vault, seam, query, max = 20) {
-  const want = String(query).toLowerCase();
-  const results = [];
-  for (const page of allPages(vault, seam)) {
-    let text;
-    try {
-      text = readFileSync(page.path, 'utf8');
-    } catch {
-      continue;
-    }
-    if (!text.toLowerCase().includes(want)) continue;
-
-    const heads = headings(text);
-    const lines = text.split(/\r?\n/);
-    const hits = [];
-    for (let i = 0; i < lines.length; i++) {
-      if (!lines[i].toLowerCase().includes(want)) continue;
-      let owner = null;
-      for (const h of heads) {
-        if (h.line <= i) owner = h;
-        else break;
-      }
-      hits.push({ line: i + 1, text: lines[i].trim(), owner });
-    }
-    results.push({ page, hits, count: hits.length });
-  }
-  results.sort((a, b) => b.count - a.count);
-  return { total: results.length, shown: results.slice(0, max) };
-}

@@ -285,6 +285,32 @@ top of its output. The failure being prevented is not "the user was never asked"
 
 ---
 
+## What a search prints
+
+A search is where an agent decides what the user's life says, so its output
+carries three directives at the points they matter (rule 4):
+
+- **Text, or a command, never a torn line.** The best matches are printed as
+  the brain wrote them: a short page whole, a long one as the section that
+  matched. Everything else is a title and the command that opens it, under
+  `NOT READ`. A one-line excerpt reads like the whole story and is not, so the
+  output contains nothing an agent could answer from that it has not been
+  handed in full.
+- **What each result lacks.** `[has: … · lacks: …]` on every result of a
+  several-word query. When no page has every word, the output says so, and
+  closes by saying what a missing word means: if it is the point of the
+  question, the brain does not record it.
+- **A miss is a next step, not a verdict.** Zero results names two moves —
+  other words, and `exposurie read` for every page by title — before the line
+  that says not to answer from memory. The old miss said *"Nothing in the brain
+  matches. Say so plainly"*, and agents obeyed it after one try with a query
+  that had failed only because it was a phrase.
+
+All of it is held inside `maxReadChars`, the same budget that decides whether a
+page opens whole: a search is a read like any other.
+
+---
+
 ## `--help`
 
 `--help` is a **question**, and a question never performs an action. It is

@@ -114,10 +114,15 @@ export function readState(vault) {
 
 export const sha256 = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
 
+/** Every category, as { name, dir } with an absolute dir, honouring a user's renames. */
+export function categoryEntries(vault, seam) {
+  const cats = seam?.categories || seamDefaults('0').categories;
+  return Object.entries(cats).map(([name, rel]) => ({ name, dir: join(vault, ...rel.split('/')) }));
+}
+
 /** Every category folder, as absolute paths, honouring a user's renames. */
 export function categoryDirs(vault, seam) {
-  const cats = seam?.categories || seamDefaults('0').categories;
-  return Object.values(cats).map((rel) => join(vault, ...rel.split('/')));
+  return categoryEntries(vault, seam).map((c) => c.dir);
 }
 
 function countMarkdown(dir) {

@@ -21,7 +21,8 @@ import assert from 'node:assert';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { headings, findSection, sliceSection, outlineBlock, allPages, search } from '../src/read.js';
+import { headings, findSection, sliceSection, outlineBlock, allPages } from '../src/read.js';
+import { rank } from '../src/search.js';
 import { seamDefaults, writeSeam } from '../src/vault.js';
 import { read } from '../src/commands/read.js';
 
@@ -162,11 +163,13 @@ test('EXHAUSTIVE: every section the outline advertises actually returns itself',
   assert.ok(checked >= 7, `expected to check every section, checked ${checked}`);
 });
 
-test('search returns the section a hit lives in, plus the command to open it', () => {
+test('search finds the section a hit lives in, and prints its text', () => {
   const vault = makeVault();
-  const { total, shown } = search(vault, seamDefaults('test'), 'Delivery prose');
-  assert.equal(total, 1);
-  assert.equal(shown[0].hits[0].owner.text, 'How it is delivered — and why that changed');
+  const { results } = rank(allPages(vault, seamDefaults('test')), 'Delivery prose');
+  assert.equal(results.length, 1);
+  assert.equal(results[0].best.head.text, 'How it is delivered — and why that changed');
+  const out = read({ at: vault, search: 'Delivery prose' }).body.join('\n');
+  assert.match(out, /^Delivery prose\.$/m);
 });
 
 test('no response is a dead end: a miss still carries a working next command', () => {

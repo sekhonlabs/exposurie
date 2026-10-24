@@ -75,7 +75,7 @@ anything is created.
 | `init` | reports what is on this machine, and what to do about it |
 | `scaffold` | creates the brain and copies in the files that become yours |
 | `sync` | stages what is new, so your agent can fold it into the brain |
-| `read` | opens a page, one section of it, or finds which page holds a thing |
+| `read` | opens a page or one section of it, lists every page, or finds a thing by its words |
 | `decline` | records that you said no to a pending step, so it stops asking |
 | `uninstall` | removes everything exposurie put on this machine, keeping your brain |
 
@@ -566,6 +566,36 @@ Two things it deliberately does not do:
   things. Reported forever, those put a floor under the count — and a report
   that can never reach zero is a report nobody reads. The tool prints the exact
   line that retires one, and always prints how many are retired.
+
+## Reading it back: words, not phrases
+
+A brain is only as good as what your agent can find in it, so `read --search`
+is built for the way agents actually search: a handful of keywords.
+
+- **Words, in any order.** `dead letter replay deliveries cleanup` finds the page
+  that holds those words, wherever they sit on it. Pages holding every word come
+  first; a rare word counts for more than a common one, a word in the title for
+  more than one in passing, and a long page does not win just by being long.
+- **Any form of a word.** `sheets` finds "a member Google Sheet", `naming` finds
+  "name", `organization` finds "organisation". Accents are ignored both ways.
+- **Whole words.** `LOR` finds letters of recommendation, not "explorer".
+- **The answer, not a pointer to it.** The best few pages come back as the brain
+  wrote them — a short page whole, a long one as the section that matched, with
+  the command for the rest. Everything else is listed with its command and marked
+  unread, so nothing printed can pass for something that was not.
+- **Honest about gaps.** Every result says which of your words it has and which
+  it lacks. A search that finds nothing says what to try next — other words, or
+  `exposurie read` on its own, which lists every page by title — before it says
+  the brain does not have it.
+
+**Why it changed.** Through 1.2.0 a search was one substring match of the whole
+query. Replayed against the [public benchmark](https://github.com/sekhonlabs/exposurie-bench)'s
+brains, 20 of the 61 searches agents actually ran came back empty — nearly all
+of them because they were several words. In its long task, a fresh session after
+a sync searched three times, got nothing three times, and went on without rules
+its brain held on a page titled with the words it had searched for. The same 61
+searches now come back empty 6 times, each one a question the brain was never
+told the answer to.
 
 ## Platforms and clients
 
