@@ -590,12 +590,11 @@ is built for the way agents actually search: a handful of keywords.
 
 **Why it changed.** Through 1.2.0 a search was one substring match of the whole
 query. Replayed against the [public benchmark](https://github.com/sekhonlabs/exposurie-bench)'s
-brains, 23 of the 61 searches agents actually ran came back empty. Six of those
-were right: questions the brain was never told the answer to. The other 17
-failed only because they were several words. In its long task, a fresh session
-after a sync searched three times, got nothing three times, and went on without
-rules its brain held on a page titled with the words it had searched for. The
-same 61 searches now come back empty 6 times, and they are those six.
+brains, 23 of the 61 searches agents actually ran came back empty:
+- **17 failed due to multi-word queries** (e.g. keyword searches failing exact substring matching). These are now fixed by word-based BM25 search.
+- **6 came back empty correctly**, for questions about topics the brain was never told the answer to.
+
+In the long task, a fresh session after a sync searched three times, got nothing three times, and went on without rules its brain held on a page titled with the words it had searched for. Under the new search, exactly those 6 missing-knowledge queries still come back empty (as intended), resolving all 17 search failure bugs across the 61 benchmark queries.
 
 ## Platforms and clients
 
