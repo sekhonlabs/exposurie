@@ -36,13 +36,35 @@ import { fileURLToPath } from 'node:url';
 
 import { PACKAGE, UNINSTALL } from './install.js';
 
-/** Same spawn shape everywhere: npm is a `.cmd` shim on Windows. */
-function npm(args) {
-  return spawnSync('npm', args, {
+/**
+ * Same spawn shape everywhere: npm is a `.cmd` shim on Windows, so it needs a
+ * shell.
+ *
+ * ONE STRING, NOT AN ARRAY. Since Node 24, handing a shell an args array prints
+ * a DEP0190 deprecation warning on stderr, because the array is only joined
+ * with spaces and never escaped. 1.2.0 did exactly that, so `uninstall` -- the
+ * one command typed with nobody watching -- printed a security warning about
+ * itself on the way out. Nothing broke, and that is why no test saw it: it was
+ * wrong but well-formed.
+ *
+ * The parts are all ours (a verb, a flag, the package name), so joining them is
+ * safe today. The check makes it safe tomorrow too: anything that is not a
+ * plain token is refused rather than handed to a shell, so a future caller
+ * cannot pass a path or a user's string through here without being stopped.
+ *
+ * `timeout` is the caller's: a removal is quick and bounded, but an install
+ * downloads, and killing npm halfway through writing a global install is how a
+ * machine ends up with no working copy at all. npm bounds its own network waits.
+ */
+export function npm(args, { timeout = 120000 } = {}) {
+  for (const a of args) {
+    if (!/^[\w@./=-]+$/.test(a)) throw new Error(`npm: refusing to pass "${a}" through a shell`);
+  }
+  return spawnSync(['npm', ...args].join(' '), {
     encoding: 'utf8',
     shell: true,
     windowsHide: true,
-    timeout: 120000,
+    timeout,
   });
 }
 

@@ -9,8 +9,8 @@
 // marked `readable: false` and REPORTED as such — a client we cannot parse yet
 // is a known gap, not a silent omission.
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, readFileSync, rmSync, rmdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 
 import { readTranscript } from './extract/transcript.js';
@@ -264,6 +264,32 @@ export function obsidianInstalled() {
 }
 
 export const configPath = () => join(HOME, '.exposurie', 'config.json');
+
+/**
+ * The machine config: the one file outside the brain that says where it is.
+ *
+ * 1.2.0 left it behind while printing "that is every byte exposurie wrote
+ * outside your brain" -- a false sentence in the one command that runs with
+ * nobody watching, found by taking the tool off a real machine and looking.
+ * It is ours end to end, so it goes, and so does the folder we made for it if
+ * nothing else has moved in.
+ *
+ * It lives here rather than in uninstall.js for the reason reach.js and
+ * surfaces.js hold their own removals: uninstall.js contains no code that can
+ * delete a file at all, which is what lets a test promise it cannot reach the
+ * brain. This deletes one path, fixed above, and nothing else.
+ */
+export function removeMachineConfig() {
+  const file = configPath();
+  if (!existsSync(file)) return { action: 'absent', file };
+  rmSync(file);
+  try {
+    rmdirSync(dirname(file));
+  } catch {
+    // Something else is in there, so the folder is no longer only ours.
+  }
+  return { action: 'removed', file };
+}
 
 /**
  * The pointer file, and an HONEST answer about it.

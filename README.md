@@ -50,6 +50,7 @@ exposurie init
 
 `exposurie --version` confirms which release you have **and whether it is really
 installed**, which is the thing that decides whether any of the below works.
+Later, `exposurie update` gets you the newest one — see [Updating](#updating).
 
 Requirements: **a coding agent.** That is the whole list — Node arrives with
 Claude Code. Obsidian and your chat export are steps the tool walks your agent
@@ -77,10 +78,11 @@ anything is created.
 | `sync` | stages what is new, so your agent can fold it into the brain |
 | `read` | opens a page or one section of it, lists every page, or finds a thing by its words |
 | `decline` | records that you said no to a pending step, so it stops asking |
+| `update` | installs the newest release and brings its own files up to match, keeping your brain |
 | `uninstall` | removes everything exposurie put on this machine, keeping your brain |
 
-The first five are typed by **your agent**. `uninstall` is **yours** — see
-[Leaving](#leaving). Every command prints the exact next command to run, and
+The first five are typed by **your agent**. `update` and `uninstall` are
+**yours** — see [Updating](#updating) and [Leaving](#leaving). Every command prints the exact next command to run, and
 `exposurie help` prints the whole list with its flags.
 
 **There is one spelling of every command, on every machine.** `exposurie sync`
@@ -266,6 +268,13 @@ client's documented convention and were **not** — and the output says so on th
 line that writes them. A wrong guess there writes a markdown file nothing reads,
 which is the reason every path this tool writes to is markdown and never a
 config another tool parses.
+
+### And one small file that remembers where your brain is
+
+`~/.exposurie/config.json` holds the path to your brain and the release that set
+this machine up. No content of yours is in it. The path is how every command
+finds your brain from any folder; the release is how a new version knows it has
+just been updated.
 
 **That is everything exposurie puts anywhere outside your brain folder.**
 `uninstall` takes all of it back: the pointer block comes out and leaves those
@@ -492,7 +501,10 @@ for you.
 
 exposurie has no telemetry, no endpoint, and no network code. Not "off by
 default" — there is nothing in the package that could phone home, which is the
-only version of that claim you can verify in one grep.
+only version of that claim you can verify in one grep. The one command that
+reaches the internet at all is `exposurie update`, and even there it is npm
+doing the download — the same as typing the install line — and only when you
+type it.
 
 That leaves a real problem: if a brain turns into a pile of session logs, we
 never find out. So the check runs where the brain is, and reports to the only
@@ -612,8 +624,9 @@ Your brain is **local files on your disk.** Nothing is uploaded, there is no
 account, and there is no server to send anything to.
 
 What is written outside your brain folder is a short pointer block in each
-agent's own instructions file, plus a slash command and a skill — none of which
-carry any content of yours, and all of which `uninstall` removes. See
+agent's own instructions file, plus a slash command, a skill and one small file
+that remembers where your brain is — none of which carry any content of yours,
+and all of which `uninstall` removes. See
 [What it writes outside your brain](#what-it-writes-outside-your-brain).
 
 `exposurie` never creates a backup remote for you. It runs `git init` on your
@@ -621,6 +634,43 @@ brain so you get local history and undo, warns you that it lives on one disk, an
 will push to a remote **you** configured. Creating that remote is a decision with
 one irreversible failure mode — a visibility flag wrong once and every
 conversation you have ever had with an AI is public — so it stays yours to make.
+
+## Updating
+
+One command, and you type it yourself — no agent involved:
+
+```bash
+exposurie update
+```
+
+It installs the newest release from npm, then the new release brings what it
+wrote outside your brain — the pointer, the slash command, the skill — up to
+match itself, and tells you what it changed. **Your brain is never touched.**
+Its pages, schema and procedures are yours, and an update never rewrites them.
+
+It is yours rather than your agent's for the same reason `uninstall` is: it
+replaces software on your machine, and on macOS and Linux npm's global folder
+can need an administrator. Nothing here ever asks for a password, so when npm is
+refused, `update` says so and prints the exact `sudo` line for you to type.
+
+Like `uninstall`, it only replaces the copy npm installed and you just ran. A
+linked checkout, or a copy you put on your PATH yourself, is reported and left
+alone, with the install line printed for you.
+
+**Updating any other way works too.** Run the install line again, or
+`npm update -g`, and the new release notices on its first run that an older one
+set this machine up, and does the same thing then. `exposurie --version` is a
+good first run: it also shows which release you now have.
+
+**On 1.2.0 or older?** Those releases have no `update`, so the first update is
+the install line, once:
+
+```bash
+npm install -g @sekhon/exposurie
+```
+
+Nothing checks for new releases on its own — that would be a network call, and
+there are none. You hear about a release from this repo or from npm.
 
 ## Leaving
 
@@ -637,7 +687,7 @@ that does not resolve would have nobody to notice it, and the one place a
 half-finished job would have nobody to spot it.
 
 It removes the pointer from every client it was written into, and deletes the
-slash command and the skill. Your own instructions files come back
+slash command, the skill and the small file that remembers where your brain is. Your own instructions files come back
 **byte-identical** — the block goes, the blank line above it goes, and a file
 that only ever held our block is deleted rather than left empty. The command
 and the skill were whole files of ours, so they go outright, along with the
@@ -661,8 +711,10 @@ reported and left alone rather than guessed at. In that one case it prints the
 line for you, because being told a thing is gone when it is not is worse than
 being handed a command.
 
-Changed your mind later? Run `scaffold` again and it picks up exactly where you
-left off — what has been synced is recorded inside the brain, not in the tool.
+Changed your mind later? Install it again and run `exposurie scaffold` — the
+uninstall output prints that line for you, with `--at` already filled in if your
+brain is not at `~/brain`. It picks up exactly where you left off, because what
+has been synced is recorded inside the brain, not in the tool.
 
 ## Development
 
@@ -701,6 +753,10 @@ by breaking the thing it guards and watching it fail:
 - `--json` never answers with prose — a caller that asked for JSON gets JSON
   from every command, including the ones with nothing structured to say
 - `uninstall` never removes a directory it did not create
+- an update never writes a byte of your brain, and only brings up to date what
+  setup wrote outside it — never what you or `uninstall` took out
+- `update` and `uninstall` only touch the copy npm installed and you are running,
+  so the suite cannot install or remove the package on the machine it runs on
 - no two always-loaded surfaces spend your context budget on the same job
 - text that only looks like something you typed never reaches your brain
 - an excluded conversation is never opened, not merely dropped afterwards

@@ -26,14 +26,16 @@
 // to leave builds any trust at all. The brain is reported, not touched, and the
 // tool says where it is on the way out.
 
+import { resolve } from 'node:path';
+
 import { OK } from '../exit-codes.js';
 import { unreachAll } from '../reach.js';
 import { unsurfaceAll } from '../surfaces.js';
-import { installState } from '../install.js';
+import { installState, cmd, q, INSTALL } from '../install.js';
 import { removePackage, packageLines } from '../package-removal.js';
-import { detect, tilde } from '../context.js';
+import { detect, tilde, removeMachineConfig } from '../context.js';
 import { block, wrap } from '../output.js';
-import { vaultState } from '../vault.js';
+import { vaultState, DEFAULT_VAULT } from '../vault.js';
 
 export function uninstall({ at } = {}) {
   const d = detect({ at });
@@ -59,6 +61,7 @@ export function uninstall({ at } = {}) {
   const results = [
     ...unreachAll().map((r) => ({ ...r, label: r.name })),
     ...unsurfaceAll().map((r) => ({ ...r, label: `${r.name} ${r.kind}` })),
+    { ...removeMachineConfig(), label: 'machine config' },
   ];
 
   const removed = results.filter((r) => r.action === 'removed');
@@ -70,6 +73,15 @@ export function uninstall({ at } = {}) {
   // Silence there reads as "it missed one", and the entire value of this
   // command is that you can see for yourself that it finished.
   for (const r of absent) rows.push([r.label, `nothing of ours was there`]);
+
+  // Coming back means setup again, and without the machine config setup only
+  // knows the default place to look. So the line names the brain it found
+  // whenever that brain is somewhere else -- printed whole, so nobody has to
+  // work out a flag on the day they decide to return.
+  const back =
+    d.vault && resolve(d.vault) !== resolve(DEFAULT_VAULT)
+      ? `${cmd('scaffold')} --at ${q(tilde(d.vault))}`
+      : cmd('scaffold');
 
   const body = [
     'UNINSTALLED',
@@ -150,9 +162,9 @@ export function uninstall({ at } = {}) {
     ...packageLines(pkg, install.binary, wrap, tilde),
     '',
     ...wrap(
-      `Changed your mind later? Run scaffold again and it picks up exactly ` +
-        `where this left off — what has been synced is recorded inside the ` +
-        `brain, not in the tool.`,
+      `Changed your mind later? \`${INSTALL}\`, then \`${back}\` — it ` +
+        `picks up exactly where this left off, because what has been synced is ` +
+        `recorded inside the brain, not in the tool.`,
       74,
       '  ',
     ),

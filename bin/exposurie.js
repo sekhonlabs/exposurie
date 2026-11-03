@@ -11,11 +11,21 @@ import { render } from '../src/output.js';
 import { ERROR, USAGE, footer } from '../src/exit-codes.js';
 import { COMMANDS, NAMES, versionResult } from '../src/commands/registry.js';
 import { cmd } from '../src/install.js';
+import { refreshOurs } from '../src/refresh.js';
 
 // The parsed flags, hoisted so the one writer below can consult them rather
 // than re-reading argv. Null until parsing succeeds, and null forever if it
 // throws — which is exactly the case the fallback down there covers.
 let parsedValues = null;
+
+// What finishing an update changed, if this run did it. See below.
+let refreshed = null;
+
+// The three commands that must not ride the refresh: `scaffold` writes the
+// same files and stamps the version itself, `uninstall` is taking them away,
+// and `update` does it at the one moment it is right to -- in the new copy,
+// after npm has run, never in the old one before.
+const NO_REFRESH = new Set(['scaffold', 'uninstall', 'update']);
 
 function main(argv) {
   let parsed;
@@ -57,6 +67,23 @@ function main(argv) {
         fix: `RUN: ${cmd('help')}`,
       },
     };
+  }
+
+  // AN UPDATE FINISHES ITSELF. npm replaces the package and nothing else, so a
+  // copy that finds the machine set up by an older release brings its own files
+  // outside the brain up to match before doing what it was asked -- however it
+  // got updated. See src/refresh.js. It rides every command, `--help` and
+  // `--version` included, because the first thing a person runs after updating
+  // is often exactly those.
+  //
+  // It is a passenger, and a passenger must never crash the trip: a refresh
+  // that throws costs nothing but its own work, which the next command retries.
+  if (!NO_REFRESH.has(asked)) {
+    try {
+      refreshed = refreshOurs();
+    } catch {
+      refreshed = null;
+    }
   }
   // `--help` is a question, and a question must never be able to perform an
   // action. The flag used to be consulted only when nothing was named —
@@ -107,7 +134,35 @@ try {
 // the one case where there are no parsed values to consult.
 const wantsJson = parsedValues ? Boolean(parsedValues.json) : process.argv.includes('--json');
 
-if (wantsJson) {
+// What the refresh changed is said, every time it changes anything. Files of
+// the user's were edited -- a block in their instructions file, at least -- and
+// an edit made without a word is what makes somebody stop trusting a tool with
+// their files. Said once: the stamp moves, so the next run has nothing to say.
+if (refreshed?.rows.length) {
+  const said = [
+    `UPDATED TO ${refreshed.to}`,
+    `  This machine was set up by ${refreshed.from}, so this release brought its`,
+    '  own files outside your brain up to match. Your brain was not touched.',
+    ...refreshed.rows.map(([client, what]) => `  ${client.padEnd(12)}  ${what}`),
+  ];
+  const body = Array.isArray(result.body) ? result.body : result.body ? [result.body] : [];
+  result = { ...result, body: [...said, ...(body.length ? ['', ...body] : [])] };
+  if (result.json) {
+    result.json = {
+      ...result.json,
+      refreshed: { from: refreshed.from, to: refreshed.to, files: refreshed.changed },
+    };
+  }
+}
+
+if (result.passthrough) {
+  // `update` handing over to the release it just installed. That process
+  // rendered its own report through ITS copy of this file, so it is written
+  // as it came -- re-rendering it here would put the old release's skeleton
+  // around the new release's words.
+  process.stdout.write(result.passthrough.stdout);
+  if (result.passthrough.stderr) process.stderr.write(result.passthrough.stderr);
+} else if (wantsJson) {
   // ALWAYS JSON once it has been asked for. This used to be
   // `wantsJson && result.json`, so a command with no structured payload — the
   // librarian among them — answered a machine caller with prose at exit 0.
@@ -137,4 +192,4 @@ if (wantsJson) {
 // built on. Setting the code lets Node drain stdout and exit on its own. Every
 // command here is synchronous and holds nothing open, so there is nothing to
 // keep the loop alive once the write lands.
-process.exitCode = result.code;
+process.exitCode = result.passthrough ? result.passthrough.code : result.code;

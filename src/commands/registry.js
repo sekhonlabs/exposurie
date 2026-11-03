@@ -14,6 +14,7 @@ import { scaffold } from './scaffold.js';
 import { sync } from './sync.js';
 import { read } from './read.js';
 import { decline } from './decline.js';
+import { update } from './update.js';
 import { uninstall } from './uninstall.js';
 import { OK } from '../exit-codes.js';
 import { vaultState } from '../vault.js';
@@ -42,6 +43,10 @@ export const COMMANDS = {
   decline: {
     summary: 'record that your user said no to a pending step, so it stops asking',
     run: (v, pos) => decline(v, pos),
+  },
+  update: {
+    summary: 'install the newest release and bring its own files up to match, keeping your brain',
+    run: (v) => update({ json: v.json }),
   },
   uninstall: {
     summary: 'remove everything exposurie put on this machine, keeping your brain',
@@ -168,11 +173,20 @@ export function helpText() {
     '  A search takes words, in any order and any form, and prints the best',
     '  matches as the brain wrote them. Each result says which words it lacks.',
     '',
+    'UPDATING',
+    // The second command a person types themselves, for the same reason as the
+    // one below: it changes what is installed on their machine, and on macOS
+    // and Linux that can need a password no agent should be typing.
+    `  ${cmd('update')}`,
+    '      Installs the newest release and brings what it wrote into your agent',
+    '      up to match. Your brain is never touched. Type it yourself; it does',
+    '      not need an agent.',
+    '',
     'LEAVING',
     // Built through cmd() rather than written as a literal, and on a line of
     // its own rather than in a padded column.
-    // This is the ONE command in the product typed by a person with
-    // no agent to notice "command not found" for them.
+    // One of the two commands in the product typed by a person with no agent
+    // to notice "command not found" for them.
     `  ${cmd('uninstall')}`,
     '      Takes the tool back off this machine. Your brain stays where it is,',
     '      in plain Markdown, and nothing in it needs this tool to be read.',

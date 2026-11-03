@@ -8,7 +8,7 @@
 // two cannot drift apart quietly — adding a command without listing it here
 // fails immediately and loudly rather than at the moment output goes wrong.
 
-export const NAMES = ['init', 'scaffold', 'sync', 'read', 'decline', 'uninstall', 'help'];
+export const NAMES = ['init', 'scaffold', 'sync', 'read', 'decline', 'update', 'uninstall', 'help'];
 
 /** The sync command, named once. The state line points here when it exists. */
 export const SYNC = 'sync';
