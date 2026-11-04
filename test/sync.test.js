@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, appendFileSync, existsSync, readdirSync, utimesSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -22,10 +22,10 @@ function home() {
   return h;
 }
 
-function run(h, args) {
-  const opts = { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local') } };
+function run(h, args, { nodeArgs = [], env = {} } = {}) {
+  const opts = { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local'), ...env } };
   try {
-    return { code: 0, out: execFileSync(process.execPath, [BIN, ...args], opts) };
+    return { code: 0, out: execFileSync(process.execPath, [...nodeArgs, BIN, ...args], opts) };
   } catch (e) {
     return { code: e.status, out: (e.stdout || '') + (e.stderr || '') };
   }
@@ -171,6 +171,102 @@ test('an excluded conversation is never loaded, not merely dropped later', () =>
   assert.match(out, /ORDINARY-WORK/);
   assert.match(r.out, /excluded/);
 });
+
+for (const metadata of ['session_meta', 'turn_context']) {
+  test(`Codex exclusion reads ${metadata} cwd before loading a rollout`, () => {
+    const h = home();
+    // Model the permanent install without relying on the developer's PATH.
+    const bin = join(h, 'bin');
+    mkdirSync(bin);
+    for (const name of ['exposurie', 'exposurie.cmd']) writeFileSync(join(bin, name), '');
+    const path = [bin, process.env.PATH || process.env.Path || ''].join(delimiter);
+    const env = { PATH: path, Path: path };
+    const dir = join(h, '.codex', 'sessions', '2026', '08', '25');
+    mkdirSync(dir, { recursive: true });
+    const message = (text) => ({
+      type: 'response_item', timestamp: t(1),
+      payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+    });
+    const secret = join(dir, 'rollout-secret.jsonl');
+    const ordinary = join(dir, 'rollout-ordinary.jsonl');
+    const write = (path, lines) => {
+      writeFileSync(path, lines.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
+      return settled(path);
+    };
+    write(secret, [
+      // An unrelated payload's cwd is not session identity, nor is the first
+      // line necessarily the one that identifies the session.
+      { type: 'event_msg', payload: { cwd: 'C:/work/thing' } },
+      { type: 'session_meta', payload: { id: 'secret' } },
+      { type: metadata, payload: { cwd: 'C:/clients/secret-co' } },
+      // Keep the conversation beyond the bounded 64 KB metadata peek. A test
+      // of staging alone would also pass if exclusion happened after a read.
+      { type: 'event_msg', payload: { padding: 'x'.repeat(65536) } },
+      message('CLIENT-CONFIDENTIAL'),
+    ]);
+    write(ordinary, [
+      { type: 'event_msg', payload: { cwd: 'C:/clients/secret-co' } },
+      { type: 'session_meta', payload: { id: 'ordinary', cwd: 'C:/work/thing' } },
+      message('ORDINARY-CODEX-WORK'),
+    ]);
+
+    run(h, ['scaffold'], { env });
+    const cfgPath = join(h, 'brain', '.exposurie', 'config.json');
+    const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
+    cfg.excludeConversations = ['*secret*'];
+    writeFileSync(cfgPath, JSON.stringify(cfg, null, 2), 'utf8');
+
+    // Observe the actual CLI's I/O, including ESM's named fs imports. Recording
+    // the allowed read too proves the observer is active, rather than making a
+    // missing log look like a successful privacy gate.
+    const log = join(h, 'reads.jsonl');
+    const preload = join(h, 'observe-reads.cjs');
+    writeFileSync(preload, `
+      const fs = require('node:fs');
+      const { syncBuiltinESMExports } = require('node:module');
+      const watched = new Map(${JSON.stringify([secret, ordinary])}.map((path) => [fs.realpathSync(path), path]));
+      const record = (entry) => fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(entry) + '\\n');
+      const readFile = fs.readFileSync;
+      fs.readFileSync = function (path, ...args) {
+        if (watched.has(String(path))) record({ path: watched.get(String(path)), kind: 'full' });
+        return readFile.call(this, path, ...args);
+      };
+      const handles = new Map();
+      const open = fs.openSync, read = fs.readSync, close = fs.closeSync;
+      fs.openSync = function (path, ...args) {
+        const fd = open.call(this, path, ...args);
+        if (watched.has(String(path))) handles.set(fd, watched.get(String(path)));
+        return fd;
+      };
+      fs.readSync = function (fd, buffer, offset, length, position) {
+        const bytes = read.call(this, fd, buffer, offset, length, position);
+        if (handles.has(fd)) record({ path: handles.get(fd), kind: 'peek', bytes, position });
+        return bytes;
+      };
+      fs.closeSync = function (fd) {
+        handles.delete(fd);
+        return close.call(this, fd);
+      };
+      syncBuiltinESMExports();
+    `, 'utf8');
+
+    const r = run(h, ['sync', '--json'], { env, nodeArgs: ['--require', preload] });
+    assert.equal(r.code, 0, r.out);
+    const summary = JSON.parse(r.out);
+    assert.equal(summary.excluded, 1, 'Codex cwd did not reach the exclusion gate');
+    assert.equal(summary.staged, 1, 'the allowed rollout was not staged');
+    const reads = readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    const secretReads = reads.filter((entry) => entry.path === secret);
+    assert.ok(secretReads.length > 0, 'the metadata peek was not observed');
+    assert.ok(secretReads.every((entry) => entry.kind === 'peek'), 'the excluded rollout was loaded in full');
+    assert.ok(secretReads.every((entry) => entry.position >= 0 && entry.position + entry.bytes <= 65536),
+      'the excluded rollout was read beyond the bounded metadata peek');
+    assert.ok(reads.some((entry) => entry.path === ordinary && entry.kind === 'full'), 'the reader was not observed');
+    const out = staged(h);
+    assert.match(out, /ORDINARY-CODEX-WORK/);
+    assert.ok(!out.includes('CLIENT-CONFIDENTIAL'), 'excluded Codex content was staged');
+  });
+}
 
 // ----------------------------------------------------------------- the cutoff
 test('the cutoff moves on evidence that pages exist, never on a claim', () => {

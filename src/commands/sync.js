@@ -101,8 +101,9 @@ function writeState(vault, state) {
  * The working directory of a session, without reading the session.
  *
  * Exclusion is a gate: a conversation the user excluded must not be loaded at
- * all. User and assistant lines carry `cwd`, so the head of the file answers it
- * and an excluded transcript is never read past its first few KB.
+ * all. Claude Code lines carry `cwd` at the top level; Codex carries it inside
+ * session_meta or turn_context payloads. The head of the file answers it, and
+ * an excluded transcript is never read past its first 64 KB.
  */
 function peekCwd(path) {
   let fd;
@@ -118,6 +119,10 @@ function peekCwd(path) {
       try {
         const o = JSON.parse(line);
         if (o.cwd) return o.cwd;
+        if (o.type === 'session_meta' || o.type === 'turn_context') {
+          const cwd = o.payload?.cwd;
+          if (typeof cwd === 'string' && cwd) return cwd;
+        }
       } catch {
         // a line split by the read boundary; keep looking
       }
