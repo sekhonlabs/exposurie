@@ -88,7 +88,7 @@ function home(prefix) {
 
 /** That machine, with nothing named exposurie anywhere on PATH. */
 function bare(h) {
-  return { ...process.env, HOME: h, USERPROFILE: h, PATH: dirname(process.execPath), Path: dirname(process.execPath) };
+  return { ...process.env, HOME: h, USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local'), PATH: dirname(process.execPath), Path: dirname(process.execPath) };
 }
 
 /**

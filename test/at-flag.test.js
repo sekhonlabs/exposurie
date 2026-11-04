@@ -40,7 +40,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BIN = join(ROOT, 'bin', 'exposurie.js');
 
 function run(h, args) {
-  const opts = { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h } };
+  const opts = { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local') } };
   try {
     return { code: 0, out: execFileSync(process.execPath, [BIN, ...args], opts) };
   } catch (e) {

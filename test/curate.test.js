@@ -370,7 +370,7 @@ test('the curator\'s own edits are never mistaken for the pages being written', 
     try {
       return execFileSync(process.execPath, [join(ROOT, 'bin', 'exposurie.js'), ...args], {
         encoding: 'utf8',
-        env: { ...process.env, HOME: h, USERPROFILE: h },
+        env: { ...process.env, HOME: h, USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local') },
       });
     } catch (e) {
       return (e.stdout || '') + (e.stderr || '');

@@ -46,6 +46,11 @@ const V = version();
 const OLD = 'Every result names the exact next command.';
 const STALE = 'Wording from a release older than this one.';
 
+// In-process calls to update() run with THIS machine's home folder, so the one
+// that would refresh gets a stand-in. Only spawned runs, with a sandboxed home,
+// ever reach the real refresh.
+const NO_MACHINE = () => ({ changed: [], rows: [], skipped: 'not in this process' });
+
 /** A machine with two clients, exposurie "installed" as a file npm did not place. */
 function home() {
   const h = mkdtempSync(join(tmpdir(), 'exposurie-update-'));
@@ -60,7 +65,7 @@ function env(h, { onPath = true, extra = {} } = {}) {
   return {
     ...process.env,
     HOME: h,
-    USERPROFILE: h,
+    USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local'),
     PATH: p,
     Path: p,
     EXPOSURIE_SKIP_PACKAGE_UPDATE: '1',
@@ -260,18 +265,18 @@ test('the old copy hands over to the new one, through the bin the NEW release na
   const rel = fakeRelease(
     `process.stdout.write('from=' + process.env.${HANDOFF} + ' args=' + process.argv.slice(2).join(','));`,
   );
-  const r = update({}, { updater: () => ({ action: 'installed', ...rel }) });
+  const r = update({}, { updater: () => ({ action: 'installed', ...rel }), refresher: NO_MACHINE });
   assert.ok(r.passthrough, 'nothing was handed over');
   assert.equal(r.passthrough.stdout, `from=${V} args=update`);
   assert.equal(r.passthrough.code, 0);
 
-  const j = update({ json: true }, { updater: () => ({ action: 'installed', ...rel }) });
+  const j = update({ json: true }, { updater: () => ({ action: 'installed', ...rel }), refresher: NO_MACHINE });
   assert.match(j.passthrough.stdout, /args=update,--json/, '--json was not passed on');
 });
 
 test('a new copy that cannot finish is reported, and the next command finishes it', () => {
   const rel = fakeRelease(`process.exit(3);`);
-  const r = update({}, { updater: () => ({ action: 'installed', ...rel }) });
+  const r = update({}, { updater: () => ({ action: 'installed', ...rel }), refresher: NO_MACHINE });
   assert.equal(r.code, 1);
   assert.match(r.error.message, /npm installed 9\.9\.9/);
   assert.match(r.error.message, /next exposurie command/);
@@ -279,7 +284,7 @@ test('a new copy that cannot finish is reported, and the next command finishes i
 
 test('npm installing the release you already have says so, and hands nothing over', () => {
   const rel = fakeRelease(`throw new Error('should not run');`, V);
-  const r = update({}, { updater: () => ({ action: 'installed', ...rel }) });
+  const r = update({}, { updater: () => ({ action: 'installed', ...rel }), refresher: NO_MACHINE });
   assert.equal(r.passthrough, undefined);
   assert.match(r.body.join('\n'), new RegExp(`ALREADY UP TO DATE\\n {2}${V.replace(/\./g, '\\.')} is the newest`));
 });
@@ -342,3 +347,48 @@ test('the way back names a brain that is not in the default place', () => {
   const r = run(h, ['uninstall']);
   assert.match(r.out, /exposurie scaffold --at "~[\\/]my notes"/);
 });
+
+// ------------------------------------------------------ the suite's own sandbox
+test('every spawned test fakes APPDATA as well as the home folder', () => {
+  // The hole this closes was in the suite, not the product. Every spawned test
+  // faked HOME and USERPROFILE but inherited the real APPDATA, and OpenCode's
+  // Windows instructions file lives under APPDATA. On a developer machine with
+  // OpenCode installed, `npm test` would have written the pointer into their
+  // real OpenCode file -- the suite reaching past its sandbox again, through a
+  // door nobody was watching because the machine it ran on had no OpenCode.
+  const dir = join(ROOT, 'test');
+  const leaks = [];
+  for (const f of readdirSync(dir).filter((n) => n.endsWith('.test.js'))) {
+    readFileSync(join(dir, f), 'utf8')
+      .split('\n')
+      .forEach((line, i) => {
+        if (/USERPROFILE: h\b/.test(line) && !/APPDATA:/.test(line)) leaks.push(`${f}:${i + 1}`);
+      });
+  }
+  assert.deepEqual(leaks, [], `these fake the home folder but not APPDATA: ${leaks.join(', ')}`);
+});
+
+test('a sandboxed setup never writes under the APPDATA it inherited', () => {
+  // The same hole, shown rather than grepped for: a stand-in for a real
+  // APPDATA with OpenCode in it, inherited the way every test inherits it.
+  const realLooking = mkdtempSync(join(tmpdir(), 'exposurie-appdata-'));
+  mkdirSync(join(realLooking, 'opencode'));
+  const h = home();
+  spawnSync(process.execPath, [BIN, 'scaffold', '--at', join(h, 'brain')], {
+    encoding: 'utf8',
+    env: { ...env(h), APPDATA: realLooking, ...sandboxOnly(h) },
+  });
+  assert.equal(existsSync(join(realLooking, 'opencode', 'AGENTS.md')), false, 'the sandbox leaked into APPDATA');
+
+  // And the reason the fix is needed at all: without it, the write lands there.
+  spawnSync(process.execPath, [BIN, 'scaffold', '--at', join(h, 'brain')], {
+    encoding: 'utf8',
+    env: { ...env(h), APPDATA: realLooking },
+  });
+  assert.equal(existsSync(join(realLooking, 'opencode', 'AGENTS.md')), true, 'this test no longer shows the hole it guards');
+});
+
+/** The sandbox fields every spawned test sets, beyond the home folder itself. */
+function sandboxOnly(h) {
+  return { APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local') };
+}

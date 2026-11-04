@@ -153,7 +153,7 @@ function jashansMachine() {
 
 test('END TO END: that laptop, through the real binary, asks the right things', () => {
   const h = jashansMachine();
-  const opts = { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h } };
+  const opts = { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local') } };
   let out;
   try {
     out = execFileSync(process.execPath, [BIN, 'init'], opts);
@@ -168,7 +168,7 @@ test('END TO END: that laptop, through the real binary, asks the right things', 
 
 test('END TO END: the share is printed, so the ranking is visible not just held', () => {
   const h = jashansMachine();
-  const opts = { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h } };
+  const opts = { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local') } };
   let out;
   try {
     out = execFileSync(process.execPath, [BIN, 'init'], opts);
@@ -187,7 +187,7 @@ test('a lone client does not get a 100% row, which says nothing', () => {
   mkdirSync(codex, { recursive: true });
   writeFileSync(join(codex, 'rollout-2026-08-26-a.jsonl'), '', 'utf8');
 
-  const opts = { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h } };
+  const opts = { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local') } };
   let out;
   try {
     out = execFileSync(process.execPath, [BIN, 'init'], opts);

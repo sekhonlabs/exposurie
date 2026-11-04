@@ -53,7 +53,7 @@ const withoutBinary = () => mkdtempSync(join(tmpdir(), 'exposurie-nobin-'));
 function run(h, args, path) {
   const opts = {
     encoding: 'utf8',
-    env: { ...process.env, HOME: h, USERPROFILE: h, PATH: path, Path: path },
+    env: { ...process.env, HOME: h, USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local'), PATH: path, Path: path },
   };
   try {
     return { code: 0, out: execFileSync(process.execPath, [BIN, ...args], opts) };
@@ -248,7 +248,7 @@ test('a command this machine lacks is never named without the way to get it', ()
   const bare = {
     ...process.env,
     HOME: h,
-    USERPROFILE: h,
+    USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local'),
     PATH: dirname(process.execPath),
     Path: dirname(process.execPath),
   };
@@ -291,7 +291,7 @@ test('the refusal to scaffold is itself output, and obeys the same rule', () => 
   const bare = {
     ...process.env,
     HOME: h,
-    USERPROFILE: h,
+    USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local'),
     PATH: dirname(process.execPath),
     Path: dirname(process.execPath),
   };
@@ -313,7 +313,7 @@ test('...and the same output on an installed machine says the short form', () =>
   mkdirSync(fake, { recursive: true });
   writeFileSync(join(fake, process.platform === 'win32' ? 'exposurie.cmd' : 'exposurie'), '', 'utf8');
 
-  const withIt = { ...process.env, HOME: h, USERPROFILE: h, PATH: fake, Path: fake };
+  const withIt = { ...process.env, HOME: h, USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local'), PATH: fake, Path: fake };
   let out;
   try {
     out = execFileSync(process.execPath, [BIN, 'help'], { encoding: 'utf8', env: withIt });

@@ -88,7 +88,7 @@ function home() {
 }
 
 function run(h, args, extraEnv = {}) {
-  const opts = { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h, ...extraEnv } };
+  const opts = { encoding: 'utf8', env: { ...process.env, HOME: h, USERPROFILE: h, APPDATA: join(h, 'AppData', 'Roaming'), LOCALAPPDATA: join(h, 'AppData', 'Local'), ...extraEnv } };
   try {
     return { code: 0, out: execFileSync(process.execPath, [BIN, ...args], opts) };
   } catch (e) {

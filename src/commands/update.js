@@ -57,10 +57,11 @@ function changedLines(r, intro) {
 const changedJson = (r) => r.changed.map(({ client, kind, action, file }) => ({ client, kind, action, file }));
 
 /**
- * `updater` is npm's half, injectable so a test can stand in for a registry
- * without one ever being contacted. Nothing outside the suite passes it.
+ * `updater` is npm's half and `refresher` the rewrite of our own files, both
+ * injectable so a test can stand in for a registry, and for a machine, without
+ * either being touched. Nothing outside the suite passes them.
  */
-export function update({ json = false } = {}, { updater = updatePackage } = {}) {
+export function update({ json = false } = {}, { updater = updatePackage, refresher = refreshOurs } = {}) {
   const from = process.env[HANDOFF];
   if (from) return finish(from);
 
@@ -88,7 +89,7 @@ export function update({ json = false } = {}, { updater = updatePackage } = {}) 
         json: { updated: false, from: was, detail: 'installed package unreadable' },
       };
     }
-    if (compareVersions(now, was) === 0) return current(was, state);
+    if (compareVersions(now, was) === 0) return current(was, state, refresher);
     return handOff(r, was, now, json, state);
   }
   return notUpdated(r, was, state);
@@ -136,11 +137,11 @@ function finish(from) {
 }
 
 /** npm installed the release this copy already is. */
-function current(was, state) {
+function current(was, state, refresher = refreshOurs) {
   // Still worth a refresh: somebody who updated by typing the install line,
   // and then ran this before anything else, has files from the older release
   // and a stamp that says so. This copy IS the installed one, so it can do it.
-  const r = refreshOurs();
+  const r = refresher();
   return {
     code: OK,
     state,
