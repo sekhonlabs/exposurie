@@ -345,7 +345,7 @@ export function scaffold({ at } = {}) {
     ...(reachRows.length
       ? block('', reachRows).filter((l) => l.trim() !== '')
       : ['  no supported client found — nothing written']),
-    ...block('', [['names', `${install.invocation} read --search "<topic>"`]]).filter(
+    ...block('', [['names', `${install.invocation} read --search "<topic or project>"`]]).filter(
       (l) => l.trim() !== '',
     ),
     ...wrap(

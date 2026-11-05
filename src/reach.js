@@ -32,12 +32,18 @@ export const END = '<!-- exposurie:end -->';
  * The pointer itself. This is the product: whether a stranger's agent reaches
  * the brain is decided by these words and nothing else.
  *
- * Three choices, each against a specific failure:
+ * Four choices, each against a specific failure:
  *   "You cannot see it - you must read it"  - the model answers from context
  *      and assumes it already knows the user.
  *   "before saying you do not know"         - that sentence is the exact moment
  *      the tool should fire, and a descriptive "you have a brain" fires on
  *      nothing. Conditions fire; statements do not.
+ *   "before starting work in one of their projects" - added in 1.3.1. A plain
+ *      ticket ("fix the 500, put the branch and PR text in PR.md") is not a
+ *      question, so the pointer never fired on it, and the team's branch,
+ *      title and PR format went unread: exposurie-bench's real-work-2, under
+ *      both the old read and the rebuilt one. "<topic or project>" tells the
+ *      agent a project's name is a fine thing to search for.
  *   "names the exact next command"          - one entry is enough, so trying
  *      feels cheap. `read` never returns a dead end, and the agent should know
  *      that before it decides whether to bother.
@@ -73,10 +79,11 @@ export function pointer(cmd = 'exposurie') {
     'assume and whatever you infer from the current folder. You cannot see',
     'it; you must read it.',
     '',
-    'Before answering any such question, and before saying you do not know',
-    'something about them, run:',
+    'Before answering any such question, before starting work in one of',
+    'their projects, and before saying you do not know something about',
+    'them, run:',
     '',
-    `    ${cmd} read --search "<topic>"`,
+    `    ${cmd} read --search "<topic or project>"`,
     '',
     'Every result names the exact next command. Do not answer from memory first.',
   ].join('\n');

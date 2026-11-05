@@ -1,6 +1,6 @@
 {
   "name": "@sekhon/exposurie",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "exposurie by sekhon — an external brain your coding agent builds, curates and reads for you.",
   "type": "module",
   "bin": {

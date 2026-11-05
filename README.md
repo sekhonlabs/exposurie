@@ -231,7 +231,10 @@ of every session:
 | Cursor | `~/.cursor/rules/exposurie.mdc` |
 
 That block is **a pointer, never content.** It says a brain exists, that it is
-authoritative about you, and gives the one command for searching it. It carries
+authoritative about you, and gives the one command for searching it: before
+answering anything about you, and before starting work in one of your projects,
+since a project's ways (its branch names, its pull requests) are rarely in its
+code. The second moment is new in 1.3.1. It carries
 no pages and no facts of yours, because it is paid for on every message in every
 project forever — so it stays small enough to earn that.
 

@@ -249,7 +249,7 @@ export function skillDoc(cmd = 'exposurie', vault = '~/brain') {
     'command, and the instruction for it is already in your context on every',
     'message:',
     '',
-    `    ${cmd} read --search "<topic>"`,
+    `    ${cmd} read --search "<topic or project>"`,
     '',
     'Reach for that directly rather than syncing first. Reading needs nothing',
     'to have been synced today.',
