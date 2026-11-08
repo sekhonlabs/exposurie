@@ -98,33 +98,74 @@ function writeState(vault, state) {
 }
 
 /**
- * The working directory of a session, without reading the session.
+ * `payload.cwd` on a Codex session_meta or turn_context line, read from the
+ * line's own start, so it works on a line the read boundary cut short.
+ *
+ * The prefix may skip top-level keys before `type` and payload keys before
+ * `cwd`, but never a brace. That is what keeps a `cwd` nested in some other
+ * object, or on another line type, from matching. `m`, because `^` has to mean
+ * the start of every line: without it only line 1 is ever seen.
+ */
+const CODEX_CWD =
+  /^\{[^{}\n]*?"type":"(?:session_meta|turn_context)","payload":\{[^{}]*?"cwd":("(?:[^"\\\n]|\\.)*")/gm;
+
+/**
+ * Every working directory the head of a session names, without reading the
+ * session.
  *
  * Exclusion is a gate: a conversation the user excluded must not be loaded at
- * all. User and assistant lines carry `cwd`, so the head of the file answers it
- * and an excluded transcript is never read past its first few KB.
+ * all. So this is one read of the first 64 KB, from offset 0, and nothing
+ * else — and the caller excludes the session if ANY directory found here is
+ * on the list. First-found-wins let a Codex rollout through when it opened in
+ * an allowed folder and a later turn_context named an excluded one.
+ *
+ * Claude Code lines carry `cwd` at the top level, and that is still checked
+ * first. Codex carries it in the payload of session_meta and turn_context; a
+ * nested `cwd` on any other line type is not the session's folder.
+ *
+ * Codex's session_meta line is large on its own — base_instructions and
+ * dynamic_tools put real ones at 14–34 KB — and past 64 KB it is cut at the
+ * boundary and no longer parses. Codex writes `cwd` before those fields, so
+ * CODEX_CWD still reads it from the prefix that fits.
+ *
+ * A bounded peek cannot see a turn past 64 KB, nor a `cwd` written after a
+ * nested object. An empty list means "unknown", not "allowed".
  */
-function peekCwd(path) {
+function peekCwds(path) {
+  const found = [];
+  const add = (cwd) => {
+    if (cwd && !found.includes(cwd)) found.push(cwd);
+  };
   let fd;
   try {
     fd = openSync(path, 'r');
     const buf = Buffer.alloc(65536);
     const n = readSync(fd, buf, 0, buf.length, 0);
+    const head = buf.toString('utf8', 0, n);
     // NOT just the first line. A transcript opens with mode/system lines that
     // carry no `cwd`, so reading one line makes exclusion silently never fire —
     // the user sets a denylist, nothing is excluded, and nothing says so.
-    for (const line of buf.toString('utf8', 0, n).split('\n')) {
+    for (const line of head.split('\n')) {
       if (!line.trim()) continue;
       try {
         const o = JSON.parse(line);
-        if (o.cwd) return o.cwd;
+        if (o.cwd) add(o.cwd);
+        if ((o.type === 'session_meta' || o.type === 'turn_context') && typeof o.payload?.cwd === 'string') {
+          add(o.payload.cwd);
+        }
       } catch {
-        // a line split by the read boundary; keep looking
+        // a line split by the read boundary; CODEX_CWD reads what it can of it
       }
     }
-    return null;
+    for (const m of head.matchAll(CODEX_CWD)) {
+      try {
+        add(JSON.parse(m[1]));
+      } catch {
+        // an escape JSON does not accept; nothing to take from it
+      }
+    }
   } catch {
-    return null;
+    // unreadable: nothing found, which the caller treats as unknown
   } finally {
     if (fd !== undefined) {
       try {
@@ -132,6 +173,7 @@ function peekCwd(path) {
       } catch {}
     }
   }
+  return found;
 }
 
 /** Newest activity in the brain's pages, so "did the writing happen" is answerable. */
@@ -347,7 +389,11 @@ function stage(vault, d) {
   const included = [];
   const excluded = [];
   const deferred = [];
+  // Codex rollouts whose head named no folder while an exclude list is set.
+  // Not excluded — nobody knows that they are — and not read either.
+  const unidentified = [];
   const eligible = [];
+  const excluding = (seam.excludeConversations || []).length > 0;
   for (const cand of candidates) {
     // In flight before excluded, and before anything is opened. This is the
     // conversation somebody is having RIGHT NOW — most often the one running
@@ -362,13 +408,28 @@ function stage(vault, d) {
       deferred.push({ path: cand.path, why: live });
       continue;
     }
-    const identity =
-      cand.kind === 'webchat'
-        ? { cwd: null, title: cand.session.project }
-        : { cwd: peekCwd(cand.path) };
-    const hit = conversationExcluded(identity, seam);
+    if (cand.kind === 'webchat') {
+      const hit = conversationExcluded({ cwd: null, title: cand.session.project }, seam);
+      if (hit) excluded.push({ path: cand.path, why: hit });
+      else eligible.push(cand);
+      continue;
+    }
+    // Any folder the head names that is on the list excludes the session, not
+    // just the first one found.
+    const cwds = peekCwds(cand.path);
+    const hit = cwds.map((cwd) => conversationExcluded({ cwd }, seam)).find(Boolean);
     if (hit) excluded.push({ path: cand.path, why: hit });
-    else eligible.push(cand);
+    // A Codex rollout with no folder in its head fails CLOSED while a list is
+    // set: unknown is not the same as allowed, and reading it to find out is
+    // the read the gate exists to prevent. Held, not marked read, so a sync
+    // that can tell where it ran takes it later.
+    //
+    // Codex only, for now. A Claude Code transcript can have no `cwd` in its
+    // head too (a first message carrying a large image pushes it past 64 KB),
+    // and it is still read — unchanged here, and a separate decision.
+    else if (excluding && cwds.length === 0 && cand.client === 'codex') {
+      unidentified.push({ path: cand.path, why: 'no folder named in its first 64 KB' });
+    } else eligible.push(cand);
   }
 
   // Files the person put in their brain. Noticed here rather than in a command
@@ -425,14 +486,27 @@ function stage(vault, d) {
     // otherwise be told "nothing has changed" while they are visibly changing
     // it — which reads as the tool being broken, and is the same silence this
     // whole file is written against.
-    const why = deferred.length && eligible.length === 0
-      ? `Nothing finished since the last sync. ${deferred.length} conversation${deferred.length === 1 ? ' is' : 's are'} still ` +
+    //
+    // A hold-back for an unknown folder is said in every branch, and it limits
+    // what the lead sentence may claim: with sessions held, "nothing has
+    // changed" is false.
+    const held = unidentified.length
+      ? ` ${unidentified.length} Codex session${unidentified.length === 1 ? ' was' : 's were'} held back unread: ` +
+        `${unidentified.length === 1 ? 'its' : 'their'} first 64 KB named no folder, and your exclude list is set.`
+      : '';
+    const why = (deferred.length && eligible.length === 0
+      ? `${unidentified.length ? 'Nothing that could be read has finished' : 'Nothing finished'} since the last sync. ` +
+        `${deferred.length} conversation${deferred.length === 1 ? ' is' : 's are'} still ` +
         `going — including this one — and ${deferred.length === 1 ? 'it comes' : 'they come'} on the next sync, once ` +
         `${deferred.length === 1 ? 'it has' : 'they have'} ended. Nothing is lost.`
       : eligible.length === 0
-      ? (excluded.length ? `Nothing new outside your exclude list, which held back ${excluded.length} session${excluded.length === 1 ? '' : 's'}.` : 'Nothing on this machine has changed since the last sync.')
+      ? (excluded.length
+          ? `Nothing new outside your exclude list, which held back ${excluded.length} session${excluded.length === 1 ? '' : 's'}.`
+          : unidentified.length
+          ? 'Nothing new could be read.'
+          : 'Nothing on this machine has changed since the last sync.')
       : `${eligible.length} transcript${eligible.length === 1 ? '' : 's'} changed, but none held any conversation — ` +
-        'they were tool work with nothing said.';
+        'they were tool work with nothing said.') + held;
 
     // An export that would not open has to be reported HERE too, and this is
     // the path where it matters most: when the export is the only material a
@@ -495,6 +569,7 @@ function stage(vault, d) {
         candidates: candidates.length,
         excluded: excluded.length,
         deferred: deferred.length,
+        unidentified: unidentified.length,
         empty: empty.length,
         exports: {
           found: web.exports,
@@ -534,7 +609,7 @@ function stage(vault, d) {
   }
   writeFileSync(
     join(dir, 'MANIFEST.md'),
-    renderManifest(id, rows, { excluded, deferred, empty, remaining, chars, rawTotal, redactions, web }),
+    renderManifest(id, rows, { excluded, deferred, unidentified, empty, remaining, chars, rawTotal, redactions, web }),
     'utf8',
   );
 
@@ -615,6 +690,9 @@ function stage(vault, d) {
     ]);
   }
   if (excluded.length) summary.push(['excluded', `${excluded.length} by your exclude list`]);
+  if (unidentified.length) {
+    summary.push(['held back', `${unidentified.length} Codex, folder unknown while your exclude list is set`]);
+  }
   if (deferred.length) {
     summary.push(['still going', `${deferred.length} not finished — next sync takes ${deferred.length === 1 ? 'it' : 'them'}`]);
   }
@@ -696,6 +774,7 @@ function stage(vault, d) {
       rawBytes: rawTotal,
       excluded: excluded.length,
       deferred: deferred.length,
+      unidentified: unidentified.length,
       empty: empty.length,
       redactions,
       standing: !!standingText,
@@ -1088,6 +1167,19 @@ function renderManifest(id, rows, extra) {
     out.push('Only the head of each was read, far enough to find which folder it', '');
     out.push('belonged to. None of what was said in them was loaded.', '');
     for (const e of extra.excluded) out.push(`- \`${basename(e.path)}\` — ${e.why}`);
+    out.push('');
+  }
+  if (extra.unidentified?.length) {
+    out.push('## Folder unknown — held back', '');
+    out.push(
+      'An exclude list is set, and the first 64 KB of these Codex sessions did',
+      'not say which folder they ran in, so they could be on it. Nothing past',
+      'that head was read. They are not excluded and not marked as read, so a',
+      'later sync takes them once it can tell where they ran, or once no',
+      'exclude list is set.',
+      '',
+    );
+    for (const e of extra.unidentified) out.push(`- \`${basename(e.path)}\` — ${e.why}`);
     out.push('');
   }
   if (extra.deferred?.length) {
