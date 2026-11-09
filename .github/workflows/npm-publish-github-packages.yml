@@ -1,11 +1,15 @@
 # This workflow will run tests using node and then publish a package to GitHub Packages when a release is created
 # For more information see: https://docs.github.com/en/actions/publishing-packages/publishing-nodejs-packages
+#
+# Run it by hand (Actions -> Node.js Package -> Run workflow) for the tests
+# alone, on Linux. Only a release publishes.
 
 name: Node.js Package
 
 on:
   release:
     types: [created]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,11 +19,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm ci
+      # There are no dependencies, so no `npm ci`: it refuses to run without a
+      # lockfile. The suite needs `exposurie` on PATH, linked the way the repo
+      # is developed, because scaffold will not write a pointer to a command
+      # that is not there.
+      - run: npm link
       - run: npm test
 
   publish-gpr:
     needs: build
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,7 +39,10 @@ jobs:
         with:
           node-version: 20
           registry-url: https://npm.pkg.github.com/
-      - run: npm ci
+      # GitHub Packages takes only a package scoped to the repository's owner,
+      # so the copy published here is @sekhonlabs/exposurie. On npm it stays
+      # @sekhon/exposurie; nothing here touches npm.
+      - run: npm pkg set name=@sekhonlabs/exposurie
       - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
