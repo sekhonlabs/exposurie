@@ -1,0 +1,31 @@
+name: Visitor bot
+
+# Answers each new question in Discussions -> Q&A once, from the README and docs
+# (.github/visitor-bot/answer.mjs). Every answer is billed to the
+# ANTHROPIC_API_KEY repository secret; the script caps answers per day.
+
+on:
+  discussion:
+    types: [created]
+
+permissions:
+  contents: read
+  discussions: write
+
+jobs:
+  answer:
+    if: github.event.discussion.category.is_answerable && github.event.discussion.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --prefix .github/visitor-bot --ignore-scripts --no-audit --no-fund
+      - run: node .github/visitor-bot/answer.mjs
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

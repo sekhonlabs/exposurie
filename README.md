@@ -28,6 +28,8 @@ session, so you can open a fresh one every time and lose nothing.
 > a slash command you type rather than a CLI you have to remember. The repo is
 > public, so if something here is wrong, an issue is the right place to say so.
 
+**Questions?** Ask in [Discussions → Q&A](https://github.com/sekhonlabs/exposurie/discussions/categories/q-a). A bot answers basic questions there from this README and the docs.
+
 ## Install
 
 **One line. Paste it into the coding agent you already have open** — Claude

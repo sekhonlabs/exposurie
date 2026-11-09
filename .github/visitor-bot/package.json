@@ -1,0 +1,9 @@
+{
+  "name": "exposurie-visitor-bot",
+  "private": true,
+  "type": "module",
+  "description": "Answers new questions in the repo's Discussions Q&A from the README and docs. Not part of the published package.",
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.6.0"
+  }
+}
