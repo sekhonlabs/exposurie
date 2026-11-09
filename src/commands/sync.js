@@ -109,59 +109,114 @@ function writeState(vault, state) {
 const CODEX_CWD =
   /^\{[^{}\n]*?"type":"(?:session_meta|turn_context)","payload":\{[^{}]*?"cwd":("(?:[^"\\\n]|\\.)*")/gm;
 
+const HEAD = 65536;
+
 /**
- * Every working directory the head of a session names, without reading the
- * session.
+ * A line that carries conversation: Claude Code's user and assistant lines,
+ * Codex's response items and the messages its event log repeats. It is what
+ * the gate protects.
+ */
+const isConversation = (o) =>
+  o.type === 'user' ||
+  o.type === 'assistant' ||
+  o.type === 'response_item' ||
+  (o.type === 'event_msg' && (o.payload?.type === 'user_message' || o.payload?.type === 'agent_message'));
+
+/**
+ * Every working directory a session's opening names, without reading what was
+ * said in it.
  *
  * Exclusion is a gate: a conversation the user excluded must not be loaded at
- * all. So this is one read of the first 64 KB, from offset 0, and nothing
- * else — and the caller excludes the session if ANY directory found here is
- * on the list. First-found-wins let a Codex rollout through when it opened in
- * an allowed folder and a later turn_context named an excluded one.
+ * all. So the folder is read off the session's opening and nothing more — and
+ * the caller excludes the session if ANY directory found there is on the list.
+ * First-found-wins let a Codex rollout through when it opened in an allowed
+ * folder and a later turn_context named an excluded one.
  *
- * Claude Code lines carry `cwd` at the top level, and that is still checked
- * first. Codex carries it in the payload of session_meta and turn_context; a
- * nested `cwd` on any other line type is not the session's folder.
+ * The opening is the first 64 KB, which almost always holds it. Claude Code
+ * lines carry `cwd` at the top level. Codex carries it in the payload of
+ * session_meta and turn_context; a nested `cwd` on any other line type is not
+ * the session's folder. Codex's session_meta line is large on its own —
+ * base_instructions and dynamic_tools put real ones at 14–34 KB — and past
+ * 64 KB it is cut at the boundary and no longer parses. Codex writes `cwd`
+ * before those fields, so CODEX_CWD still reads it from the prefix that fits.
  *
- * Codex's session_meta line is large on its own — base_instructions and
- * dynamic_tools put real ones at 14–34 KB — and past 64 KB it is cut at the
- * boundary and no longer parses. Codex writes `cwd` before those fields, so
- * CODEX_CWD still reads it from the prefix that fits.
+ * When those 64 KB name no folder, the read goes on one line at a time and
+ * stops at the first line that names one, or at the first line of
+ * conversation, whichever comes first. Claude Code writes `cwd` after the
+ * message on every line, so a first message carrying an image or a document
+ * puts it 180 KB in (two of 297 real transcripts, 2026-11-08). A fixed peek
+ * missed it, and the session was read even when its folder was excluded.
+ * Holding such sessions back instead would have kept every one of them out of
+ * the brain for as long as a list is set, because a transcript's opening never
+ * changes. Reading that one line to its end loses nothing and stops there: the
+ * folder is on it.
  *
- * A bounded peek cannot see a turn past 64 KB, nor a `cwd` written after a
- * nested object. An empty list means "unknown", not "allowed".
+ * Returns the folders found, and `empty`: the read reached the end of the file
+ * and met no conversation, so there is nothing in it to protect. Otherwise an
+ * empty list means "unknown", not "allowed".
  */
-function peekCwds(path) {
+function peekFolders(path) {
   const found = [];
   const add = (cwd) => {
     if (cwd && !found.includes(cwd)) found.push(cwd);
   };
+  let conversation = false;
+  let whole = false;
+  const take = (line) => {
+    if (!line.trim()) return;
+    let o;
+    try {
+      o = JSON.parse(line);
+    } catch {
+      return; // a line split by the read boundary; CODEX_CWD reads what it can of it
+    }
+    if (o.cwd) add(o.cwd);
+    if ((o.type === 'session_meta' || o.type === 'turn_context') && typeof o.payload?.cwd === 'string') {
+      add(o.payload.cwd);
+    }
+    if (isConversation(o)) conversation = true;
+  };
   let fd;
   try {
     fd = openSync(path, 'r');
-    const buf = Buffer.alloc(65536);
-    const n = readSync(fd, buf, 0, buf.length, 0);
-    const head = buf.toString('utf8', 0, n);
+    const head = Buffer.alloc(HEAD);
+    const n = readSync(fd, head, 0, HEAD, 0);
+    const text = head.toString('utf8', 0, n);
     // NOT just the first line. A transcript opens with mode/system lines that
     // carry no `cwd`, so reading one line makes exclusion silently never fire —
     // the user sets a denylist, nothing is excluded, and nothing says so.
-    for (const line of head.split('\n')) {
-      if (!line.trim()) continue;
-      try {
-        const o = JSON.parse(line);
-        if (o.cwd) add(o.cwd);
-        if ((o.type === 'session_meta' || o.type === 'turn_context') && typeof o.payload?.cwd === 'string') {
-          add(o.payload.cwd);
-        }
-      } catch {
-        // a line split by the read boundary; CODEX_CWD reads what it can of it
-      }
-    }
-    for (const m of head.matchAll(CODEX_CWD)) {
+    for (const line of text.split('\n')) take(line);
+    for (const m of text.matchAll(CODEX_CWD)) {
       try {
         add(JSON.parse(m[1]));
       } catch {
         // an escape JSON does not accept; nothing to take from it
+      }
+    }
+    whole = n < HEAD;
+    if (found.length === 0 && !conversation && !whole) {
+      // On from the start of the line the head cut, whole lines only.
+      let pending = [head.subarray(head.lastIndexOf(0x0a, n - 1) + 1, n)];
+      let pos = n;
+      for (;;) {
+        const chunk = Buffer.alloc(HEAD);
+        const got = readSync(fd, chunk, 0, HEAD, pos);
+        if (got === 0) {
+          take(Buffer.concat(pending).toString('utf8')); // a last line with no newline
+          whole = true;
+          break;
+        }
+        pos += got;
+        const part = chunk.subarray(0, got);
+        let from = 0;
+        let nl;
+        while (found.length === 0 && !conversation && (nl = part.indexOf(0x0a, from)) !== -1) {
+          take(Buffer.concat([...pending, part.subarray(from, nl)]).toString('utf8'));
+          pending = [];
+          from = nl + 1;
+        }
+        if (found.length || conversation) break;
+        pending.push(part.subarray(from));
       }
     }
   } catch {
@@ -173,7 +228,7 @@ function peekCwds(path) {
       } catch {}
     }
   }
-  return found;
+  return { cwds: found, empty: whole && !conversation };
 }
 
 /** Newest activity in the brain's pages, so "did the writing happen" is answerable. */
@@ -389,8 +444,8 @@ function stage(vault, d) {
   const included = [];
   const excluded = [];
   const deferred = [];
-  // Codex rollouts whose head named no folder while an exclude list is set.
-  // Not excluded — nobody knows that they are — and not read either.
+  // Sessions whose opening named no folder while an exclude list is set. Not
+  // excluded — nobody knows that they are — and not read either.
   const unidentified = [];
   const eligible = [];
   const excluding = (seam.excludeConversations || []).length > 0;
@@ -414,21 +469,22 @@ function stage(vault, d) {
       else eligible.push(cand);
       continue;
     }
-    // Any folder the head names that is on the list excludes the session, not
-    // just the first one found.
-    const cwds = peekCwds(cand.path);
-    const hit = cwds.map((cwd) => conversationExcluded({ cwd }, seam)).find(Boolean);
+    // Any folder the opening names that is on the list excludes the session,
+    // not just the first one found.
+    const peek = peekFolders(cand.path);
+    const hit = peek.cwds.map((cwd) => conversationExcluded({ cwd }, seam)).find(Boolean);
     if (hit) excluded.push({ path: cand.path, why: hit });
-    // A Codex rollout with no folder in its head fails CLOSED while a list is
-    // set: unknown is not the same as allowed, and reading it to find out is
-    // the read the gate exists to prevent. Held, not marked read, so a sync
-    // that can tell where it ran takes it later.
+    // A session whose opening names no folder fails CLOSED while a list is
+    // set, whichever client wrote it: unknown is not the same as allowed, and
+    // reading on to find out is the read the gate exists to prevent. Held, not
+    // marked read, so a sync that can tell where it ran takes it later.
     //
-    // Codex only, for now. A Claude Code transcript can have no `cwd` in its
-    // head too (a first message carrying a large image pushes it past 64 KB),
-    // and it is still read — unchanged here, and a separate decision.
-    else if (excluding && cwds.length === 0 && cand.client === 'codex') {
-      unidentified.push({ path: cand.path, why: 'no folder named in its first 64 KB' });
+    // Except a file read to its end with no conversation in it — a workflow
+    // journal, a stub holding only a title. There is nothing in it to protect,
+    // and holding it would report it as held back on every sync, forever. It
+    // goes on, and is marked read as empty.
+    else if (excluding && peek.cwds.length === 0 && !peek.empty) {
+      unidentified.push({ path: cand.path, why: 'its opening names no folder' });
     } else eligible.push(cand);
   }
 
@@ -491,8 +547,8 @@ function stage(vault, d) {
     // what the lead sentence may claim: with sessions held, "nothing has
     // changed" is false.
     const held = unidentified.length
-      ? ` ${unidentified.length} Codex session${unidentified.length === 1 ? ' was' : 's were'} held back unread: ` +
-        `${unidentified.length === 1 ? 'its' : 'their'} first 64 KB named no folder, and your exclude list is set.`
+      ? ` ${unidentified.length} session${unidentified.length === 1 ? ' was' : 's were'} held back unread: ` +
+        `${unidentified.length === 1 ? 'its' : 'their'} opening named no folder, and your exclude list is set.`
       : '';
     const why = (deferred.length && eligible.length === 0
       ? `${unidentified.length ? 'Nothing that could be read has finished' : 'Nothing finished'} since the last sync. ` +
@@ -691,7 +747,10 @@ function stage(vault, d) {
   }
   if (excluded.length) summary.push(['excluded', `${excluded.length} by your exclude list`]);
   if (unidentified.length) {
-    summary.push(['held back', `${unidentified.length} Codex, folder unknown while your exclude list is set`]);
+    summary.push([
+      'held back',
+      `${unidentified.length} session${unidentified.length === 1 ? '' : 's'}, folder unknown while your exclude list is set`,
+    ]);
   }
   if (deferred.length) {
     summary.push(['still going', `${deferred.length} not finished — next sync takes ${deferred.length === 1 ? 'it' : 'them'}`]);
@@ -1164,18 +1223,18 @@ function renderManifest(id, rows, extra) {
   }
   if (extra.excluded.length) {
     out.push('## Excluded by your list', '');
-    out.push('Only the head of each was read, far enough to find which folder it', '');
-    out.push('belonged to. None of what was said in them was loaded.', '');
+    out.push('Only the opening of each was read, as far as the line naming its', '');
+    out.push('folder. None of what was said in them was staged.', '');
     for (const e of extra.excluded) out.push(`- \`${basename(e.path)}\` — ${e.why}`);
     out.push('');
   }
   if (extra.unidentified?.length) {
     out.push('## Folder unknown — held back', '');
     out.push(
-      'An exclude list is set, and the first 64 KB of these Codex sessions did',
-      'not say which folder they ran in, so they could be on it. Nothing past',
-      'that head was read. They are not excluded and not marked as read, so a',
-      'later sync takes them once it can tell where they ran, or once no',
+      'An exclude list is set, and these sessions did not say which folder they',
+      'ran in before their conversation began, so they could be on it. Nothing',
+      'past that opening was read. They are not excluded and not marked as read,',
+      'so a later sync takes them once it can tell where they ran, or once no',
       'exclude list is set.',
       '',
     );

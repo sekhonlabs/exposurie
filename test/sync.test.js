@@ -183,19 +183,27 @@ test('an excluded conversation is never loaded, not merely dropped later', () =>
 const ALLOWED = 'C:/work/thing';
 const SECRET = 'C:/clients/secret-co';
 
-/** A home with a Codex sessions folder and the install scaffold requires. */
-function codexHome() {
+/** A home with the install scaffold requires. */
+function installedHome() {
   const h = home();
   // Model the permanent install without relying on the developer's PATH.
   const bin = join(h, 'bin');
   mkdirSync(bin);
   for (const name of ['exposurie', 'exposurie.cmd']) writeFileSync(join(bin, name), '');
   const searchPath = [bin, process.env.PATH || process.env.Path || ''].join(delimiter);
-  const env = { PATH: searchPath, Path: searchPath };
+  return { h, env: { PATH: searchPath, Path: searchPath } };
+}
+
+/** The same, with a Codex sessions folder. */
+function codexHome() {
+  const { h, env } = installedHome();
   const dir = join(h, '.codex', 'sessions', '2026', '08', '25');
   mkdirSync(dir, { recursive: true });
   return { h, env, dir };
 }
+
+/** The byte just past line `i` of a fixture, as `rollout` and `transcript` write it. */
+const lineEnd = (lines, i) => lines.slice(0, i + 1).reduce((n, l) => n + Buffer.byteLength(JSON.stringify(l)) + 1, 0);
 
 function rollout(file, lines) {
   writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
@@ -265,16 +273,29 @@ function observedSync(h, env, watched) {
   return { summary: JSON.parse(r.out), reads };
 }
 
-/** The rollout got the bounded metadata peek and nothing else. */
-function assertPeekOnly(reads, file) {
+/**
+ * The session got the peek at its opening and nothing else.
+ *
+ * By default that is the first 64 KB. Given `until` — the byte just past the
+ * line that settles it, the one naming the folder or the first line of
+ * conversation — the read may go on past 64 KB, but it reaches that line and
+ * no read starts after it.
+ */
+function assertPeekOnly(reads, file, until = 0) {
   const mine = reads.filter((entry) => entry.path === file);
   assert.ok(mine.length > 0, 'the metadata peek was not observed');
-  assert.ok(mine.every((entry) => entry.kind === 'peek'), 'the rollout was loaded in full');
+  assert.ok(mine.every((entry) => entry.kind === 'peek'), 'the session was loaded in full');
   // A null position reads on from wherever the last read stopped, so without
   // this a peek could take the whole file in 64 KB chunks and pass the bound.
-  assert.ok(mine.every((entry) => Number.isInteger(entry.position)), 'a read of the rollout had no fixed position');
-  assert.ok(mine.every((entry) => entry.position >= 0 && entry.position + entry.bytes <= 65536),
-    'the rollout was read beyond the bounded metadata peek');
+  assert.ok(mine.every((entry) => Number.isInteger(entry.position)), 'a read of the session had no fixed position');
+  if (!until) {
+    assert.ok(mine.every((entry) => entry.position >= 0 && entry.position + entry.bytes <= 65536),
+      'the session was read beyond the bounded metadata peek');
+    return;
+  }
+  assert.ok(mine.some((entry) => entry.position + entry.bytes >= until), 'the peek never reached the line that settles it');
+  assert.ok(mine.every((entry) => entry.position >= 0 && entry.position < until),
+    'the session was read on past the line that settles it');
 }
 
 const fullyRead = (reads, file) => reads.some((entry) => entry.path === file && entry.kind === 'full');
@@ -386,20 +407,52 @@ for (const order of ['allowed, then excluded', 'excluded, then allowed']) {
   });
 }
 
-// Unknown is not allowed. A rollout whose head names no folder could be on the
-// list, and reading it to find out is the read the gate exists to prevent.
-// The fixture's cwd sits after a nested object and past 64 KB, both out of a
-// bounded peek's sight — and it is in an excluded folder.
-const unplaceable = (dir) => rollout(join(dir, 'rollout-unknown.jsonl'), [
-  {
-    timestamp: t(0),
-    type: 'session_meta',
-    payload: { id: 'unknown', timestamp: t(0), base_instructions: { text: 'x'.repeat(70000) }, cwd: SECRET },
-  },
-  said('MAYBE-CONFIDENTIAL'),
-]);
+// A session_meta whose `cwd` comes after a nested object and past 64 KB is out
+// of the head's sight, and out of CODEX_CWD's, which stops at a brace. The read
+// goes on to the end of that line, finds the folder there, and stops.
+test('Codex exclusion finds a folder written past 64 KB, at the end of an oversized session_meta', () => {
+  const { h, env, dir } = codexHome();
+  const lines = [
+    {
+      timestamp: t(0),
+      type: 'session_meta',
+      payload: { id: 'late', timestamp: t(0), base_instructions: { text: 'x'.repeat(70000) }, cwd: SECRET },
+    },
+    said('CLIENT-CONFIDENTIAL'),
+  ];
+  assert.ok(JSON.stringify(lines[0]).indexOf('"cwd"') > 65536, 'the folder is inside the head');
+  const secret = rollout(join(dir, 'rollout-late.jsonl'), lines);
+  const ordinary = rollout(join(dir, 'rollout-ordinary.jsonl'), [
+    { type: 'session_meta', payload: { id: 'ordinary', cwd: ALLOWED } },
+    said('ORDINARY-CODEX-WORK'),
+  ]);
+  scaffoldExcluding(h, env, ['*secret*']);
 
-test('a Codex rollout whose first 64 KB names no folder is held back while an exclude list is set', () => {
+  const { summary, reads } = observedSync(h, env, [secret, ordinary]);
+  assert.equal(summary.excluded, 1, 'a folder past 64 KB did not reach the gate');
+  assert.equal(summary.unidentified, 0, 'a folder the opening names was reported as unknown');
+  assert.equal(summary.staged, 1, 'the allowed rollout was not staged');
+  assertPeekOnly(reads, secret, lineEnd(lines, 0));
+  assert.ok(fullyRead(reads, ordinary), 'the reader was not observed');
+  const out = staged(h);
+  assert.match(out, /ORDINARY-CODEX-WORK/);
+  assert.ok(!out.includes('CLIENT-CONFIDENTIAL'), 'excluded Codex content was staged');
+});
+
+// Unknown is not allowed. A rollout whose opening names no folder before its
+// conversation begins could be on the list, and reading on to find out is the
+// read the gate exists to prevent. This one names its folder only after the
+// conversation, and it is an excluded one: the gate must never reach it.
+const unplaceableLines = () => [
+  { timestamp: t(0), type: 'session_meta', payload: { id: 'unknown', timestamp: t(0) } },
+  // The conversation starts past the head, so the read has to go on to meet it.
+  { type: 'event_msg', payload: { padding: 'x'.repeat(65536) } },
+  said('MAYBE-CONFIDENTIAL'),
+  { type: 'turn_context', payload: { cwd: SECRET } },
+];
+const unplaceable = (dir) => rollout(join(dir, 'rollout-unknown.jsonl'), unplaceableLines());
+
+test('a Codex rollout whose opening names no folder is held back while an exclude list is set', () => {
   const { h, env, dir } = codexHome();
   const unknown = unplaceable(dir);
   const ordinary = rollout(join(dir, 'rollout-ordinary.jsonl'), [
@@ -409,10 +462,10 @@ test('a Codex rollout whose first 64 KB names no folder is held back while an ex
   scaffoldExcluding(h, env, ['*secret*']);
 
   const { summary, reads } = observedSync(h, env, [unknown, ordinary]);
-  assert.equal(summary.unidentified, 1, 'a rollout with no folder in its head was not held back');
-  assert.equal(summary.excluded, 0, 'an unknown folder was reported as excluded');
+  assert.equal(summary.unidentified, 1, 'a rollout with no folder in its opening was not held back');
+  assert.equal(summary.excluded, 0, 'the read went past the first line of conversation');
   assert.equal(summary.staged, 1, 'the allowed rollout was not staged');
-  assertPeekOnly(reads, unknown);
+  assertPeekOnly(reads, unknown, lineEnd(unplaceableLines(), 2));
   assert.ok(fullyRead(reads, ordinary), 'the reader was not observed');
   assert.ok(!staged(h).includes('MAYBE-CONFIDENTIAL'), 'a rollout of unknown folder was staged');
 
@@ -449,6 +502,104 @@ test('with no exclude list set, a rollout of unknown folder is read as before', 
   assert.equal(summary.unidentified, 0);
   assert.equal(summary.staged, 1);
   assert.match(staged(h), /MAYBE-CONFIDENTIAL/);
+});
+
+// ------------------------------------------------------- the gate, Claude Code
+//
+// Claude Code writes `cwd` on every line, after the message. A first message
+// carrying an image or a document puts it 180 KB into the file — two of 297
+// real transcripts on 2026-11-08 — past any fixed peek, and such a session was
+// read even when its folder was excluded.
+
+/** A session opening the way Claude Code writes one, its first message carrying an image. */
+const imageFirst = (cwd, first, later) => [
+  { type: 'queue-operation', operation: 'enqueue', timestamp: t(0), sessionId: 's9' },
+  { type: 'queue-operation', operation: 'dequeue', timestamp: t(0), sessionId: 's9' },
+  {
+    parentUuid: null,
+    isSidechain: false,
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo' + 'A'.repeat(190000) } },
+        { type: 'text', text: first },
+      ],
+    },
+    uuid: 'u1',
+    timestamp: t(1),
+    userType: 'external',
+    entrypoint: 'cli',
+    cwd,
+    sessionId: 's9',
+  },
+  {
+    type: 'assistant', cwd, sessionId: 's9', timestamp: t(2),
+    message: { role: 'assistant', content: [{ type: 'text', text: 'Looking at the screenshot.' }] },
+  },
+  {
+    type: 'user', cwd, sessionId: 's9', timestamp: t(3),
+    message: { role: 'user', content: [{ type: 'text', text: later }] },
+  },
+];
+
+test('a Claude Code session whose first message carries an image is excluded by the folder at the end of that line', () => {
+  const { h, env } = installedHome();
+  const lines = imageFirst(SECRET, 'SCREENSHOT-OF-CLIENT-WORK', 'CLIENT-CONFIDENTIAL');
+  assert.ok(lineEnd(lines, 1) + JSON.stringify(lines[2]).indexOf('"cwd"') > 65536, 'the folder is inside the head');
+  const secret = transcript(h, 'secret', 'image-first', lines);
+  const ordinary = transcript(h, 'thing', 'ordinary', [user('ORDINARY-WORK'), agent('noted')]);
+  scaffoldExcluding(h, env, ['*secret*']);
+
+  const { summary, reads } = observedSync(h, env, [secret, ordinary]);
+  assert.equal(summary.excluded, 1, 'the folder after the image did not reach the gate');
+  assert.equal(summary.unidentified, 0, 'a folder the opening names was reported as unknown');
+  assert.equal(summary.staged, 1, 'the allowed session was not staged');
+  assertPeekOnly(reads, secret, lineEnd(lines, 2));
+  assert.ok(fullyRead(reads, ordinary), 'the reader was not observed');
+  const out = staged(h);
+  assert.match(out, /ORDINARY-WORK/);
+  for (const s of ['SCREENSHOT-OF-CLIENT-WORK', 'CLIENT-CONFIDENTIAL']) assert.ok(!out.includes(s), `${s} was staged`);
+});
+
+test('with an exclude list set, an image-first session in an allowed folder is read, not held back', () => {
+  // Holding these back was the other fix on the table. A transcript's opening
+  // never changes, so it would have kept every one of them out of the brain
+  // for as long as a list is set.
+  const { h, env } = installedHome();
+  transcript(h, 'thing', 'image-first', imageFirst(ALLOWED, 'WHAT-THE-SCREENSHOT-SHOWS', 'THE-DECISION-AFTER-IT'));
+  scaffoldExcluding(h, env, ['*secret*']);
+
+  const r = run(h, ['sync', '--json'], { env });
+  assert.equal(r.code, 0, r.out);
+  const summary = JSON.parse(r.out);
+  assert.equal(summary.unidentified, 0, 'an image-first session was held back');
+  assert.equal(summary.excluded, 0);
+  assert.equal(summary.staged, 1);
+  const out = staged(h);
+  assert.match(out, /WHAT-THE-SCREENSHOT-SHOWS/);
+  assert.match(out, /THE-DECISION-AFTER-IT/);
+});
+
+test('with an exclude list set, a file with no folder and no conversation in it is not held back', () => {
+  // A workflow journal, a stub holding only a title. Nothing in it to protect,
+  // and held back it would be reported on every sync, forever.
+  const { h, env } = installedHome();
+  transcript(h, 'thing', 'stub', [
+    { type: 'last-prompt', lastPrompt: 'tidy the readme', sessionId: 's2' },
+    { type: 'ai-title', aiTitle: 'Tidy the readme', sessionId: 's2' },
+  ]);
+  transcript(h, 'thing', 'ordinary', [user('ORDINARY-WORK'), agent('noted')]);
+  scaffoldExcluding(h, env, ['*secret*']);
+
+  const r = run(h, ['sync', '--json'], { env });
+  assert.equal(r.code, 0, r.out);
+  const summary = JSON.parse(r.out);
+  assert.equal(summary.unidentified, 0, 'a file with nothing to protect was held back');
+  assert.equal(summary.empty, 1, 'the stub was not finished with as empty');
+  assert.equal(summary.staged, 1);
+  const state = JSON.parse(readFileSync(join(h, 'brain', '.exposurie', 'state.json'), 'utf8'));
+  assert.ok(Object.keys(state.pendingBatch?.files || {}).some((p) => p.endsWith('stub.jsonl')), 'the stub was not marked read');
 });
 
 // ----------------------------------------------------------------- the cutoff

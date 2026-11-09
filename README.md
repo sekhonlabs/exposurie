@@ -465,11 +465,14 @@ reason to trust it:
   of it, which is the point of installing this — depth is the product, so the
   cost is disclosed rather than avoided.
 - **Exclusion is a gate, not a cleanup.** Anything on your exclude list is never
-  read past its first 64 KB, enough to see which folder it belongs to — and
-  Codex needs much of that, since the line naming a rollout's folder runs
-  14–34 KB on its own. A Codex session whose first 64 KB names no folder is
-  held back unread while the list is set: unknown is not the same as allowed.
-  Filtering after the read is an apology, not a control.
+  read past its first 64 KB, enough to see which folder it belongs to — or,
+  when those name none, past its first line of conversation. Codex needs much
+  of the 64 KB, since the line naming a rollout's folder runs 14–34 KB on its
+  own. Claude Code names the folder after the message, so a first message
+  carrying an image puts it 180 KB in, at the end of that first line. A session
+  whose opening still names no folder is held back unread while the list is
+  set: unknown is not the same as allowed. Filtering after the read is an
+  apology, not a control.
 - **The cutoff moves last, and on evidence.** `sync --done` refuses to advance
   if nothing in the brain changed, because that means the pages were not
   written. An interrupted sync re-stages its material rather than losing it.
