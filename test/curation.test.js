@@ -222,3 +222,30 @@ test('sync reads their taste before the prompt it is allowed to overrule', () =>
   assert.notEqual(prompt, -1, 'sync never pointed at the wiki prompt');
   assert.ok(taste < prompt, 'the defaults are read before the file that overrules them');
 });
+
+test('a decision is asked for as the rule it set, in the prompt and in every sync', () => {
+  // Agents about to do the work read the brain and act on the wording. One read
+  // a decision filed as a plan ("readers will put highlights") as another
+  // agent's job and left it out; the same decision as a rule was kept. The
+  // prompt is the user's once copied and an update never touches it, so the
+  // line rides the sync output too, where a brain made before it still gets it.
+  const h = home();
+  run(h, ['scaffold']);
+  assert.match(readFileSync(dot(h, 'wiki-prompt.md'), 'utf8'), /^### Write a decision as the rule it set$/m);
+
+  const dir = join(h, '.claude', 'projects', 'work');
+  mkdirSync(dir, { recursive: true });
+  const ts = (n) => new Date(Date.UTC(2026, 7, 20, 10, n)).toISOString();
+  const say = (type, text, n) => ({
+    type, cwd: 'C:/work/thing', sessionId: 's1', timestamp: ts(n),
+    message: { role: type, content: [{ type: 'text', text }] },
+  });
+  const lines = [say('user', 'Every importer keeps the original saved date.', 1), say('assistant', 'Noted.', 2)];
+  writeFileSync(join(dir, 'a.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n', 'utf8');
+  const past = new Date(Date.now() - 3600 * 1000);
+  utimesSync(join(dir, 'a.jsonl'), past, past);
+
+  const r = run(h, ['sync']);
+  assert.match(r.out, /WRITE THE PAGES/);
+  assert.match(r.out, /Write\s+each\s+decision\s+as\s+the\s+rule\s+it\s+set,\s+in\s+the\s+present\s+tense/);
+});

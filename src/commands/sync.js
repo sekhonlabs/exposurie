@@ -807,9 +807,16 @@ function stage(vault, d) {
         },
         { read: join(vault, '.exposurie', 'wiki-prompt.md') },
         {
+          // The decision line rides the output as well as the prompt, because
+          // the prompt is the user's once it is copied and an update never
+          // touches it. An agent read a decision filed as a plan ("readers will
+          // put highlights") as another agent's job and left it out; the same
+          // decision as a rule was kept.
           write: 'Fold this batch into the brain, following the prompt above. Update ' +
-            'existing pages before creating new ones, then update index.md and ' +
-            'append one entry to log.md.',
+            'existing pages before creating new ones. Write each decision as the ' +
+            'rule it set, in the present tense and naming everything it covers, ' +
+            'built or not: the next agent acts on the wording, and a plan reads as ' +
+            "somebody else's job. Then update index.md and append one entry to log.md.",
         },
         { run: cmd('sync --done') },
       ]),

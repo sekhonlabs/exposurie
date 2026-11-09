@@ -85,6 +85,25 @@ wrong, are in `.exposurie/examples.md`. Read it once before your first batch.
    got this wrong last week — that is taste, and it is the only way this brain
    learns whose brain it is. See that file for what counts and what does not.
 
+### Write a decision as the rule it set
+
+Agents about to do the work read this brain, and they act on how a line is
+worded. So a decision goes down as the rule it made: present tense, naming
+everything it covers, even when none of it is built yet.
+
+    Every reader puts highlights on its items as `highlights: [...]`.
+
+Not as the plan it arrived as in conversation:
+
+    Readers will put highlights on items.
+
+Same decision, but the second reads as somebody else's job. In a test of
+several agents on one job, an agent building one of those readers read the
+plan version, took highlights for another agent's side, and left them out.
+Given the same decision as a rule, an agent kept it. If it is not built yet,
+say *not built yet* beside the rule, not in the tense: whether it is built is
+a fact about the work, and the rule binds whoever does it.
+
 ## What to leave out
 
 - Tool output, stack traces, file listings, diffs. The extractor already drops
