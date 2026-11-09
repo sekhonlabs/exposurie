@@ -20,10 +20,16 @@ jobs:
         with:
           node-version: 20
       # There are no dependencies, so no `npm ci`: it refuses to run without a
-      # lockfile. The suite needs `exposurie` on PATH, linked the way the repo
-      # is developed, because scaffold will not write a pointer to a command
-      # that is not there.
-      - run: npm link
+      # lockfile. The suite needs `exposurie` on PATH, because scaffold will not
+      # write a pointer to a command that is not there. It goes in a folder of
+      # its own, not through `npm link`: on Linux that puts it beside node, and
+      # the tests that model a machine with no install keep node's folder on
+      # PATH, so they would find it.
+      - run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '#!/bin/sh\nexec node "%s/bin/exposurie.js" "$@"\n' "$GITHUB_WORKSPACE" > "$RUNNER_TEMP/bin/exposurie"
+          chmod +x "$RUNNER_TEMP/bin/exposurie"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - run: npm test
 
   publish-gpr:
