@@ -27,7 +27,7 @@ let refreshed = null;
 // after npm has run, never in the old one before.
 const NO_REFRESH = new Set(['scaffold', 'uninstall', 'update']);
 
-function main(argv) {
+async function main(argv) {
   let parsed;
   try {
     parsed = parseArgs({
@@ -46,6 +46,15 @@ function main(argv) {
         outline: { type: 'boolean' },
         full: { type: 'boolean' },
         because: { type: 'string' },
+        on: { type: 'string' },
+        from: { type: 'string' },
+        to: { type: 'string' },
+        field: { type: 'string' },
+        order: { type: 'string' },
+        limit: { type: 'string' },
+        offset: { type: 'string' },
+        url: { type: 'string' },
+        'token-env': { type: 'string' },
       },
     });
   } catch (e) {
@@ -119,7 +128,7 @@ function main(argv) {
 
 let result;
 try {
-  result = main(process.argv.slice(2));
+  result = await main(process.argv.slice(2));
 } catch (e) {
   result = {
     code: ERROR,
@@ -190,6 +199,5 @@ if (result.passthrough) {
 // asynchronous, and `process.exit()` does not wait for it — so exiting on the
 // line after the write can truncate the output on the one platform this was
 // built on. Setting the code lets Node drain stdout and exit on its own. Every
-// command here is synchronous and holds nothing open, so there is nothing to
-// keep the loop alive once the write lands.
+// command completes before rendering; optional cloud calls have a timeout.
 process.exitCode = result.passthrough ? result.passthrough.code : result.code;

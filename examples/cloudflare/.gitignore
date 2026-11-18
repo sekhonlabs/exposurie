@@ -1,0 +1,4 @@
+.wrangler/
+.dev.vars
+.dev.vars.*
+wrangler.local.jsonc

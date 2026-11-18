@@ -13,6 +13,9 @@ import { init } from './init.js';
 import { scaffold } from './scaffold.js';
 import { sync } from './sync.js';
 import { read } from './read.js';
+import { dates } from './dates.js';
+import { cloud } from './cloud.js';
+import { localFirst } from '../cloud/local-first.js';
 import { decline } from './decline.js';
 import { update } from './update.js';
 import { uninstall } from './uninstall.js';
@@ -38,7 +41,15 @@ export const COMMANDS = {
   },
   read: {
     summary: 'open a page or one section of it, list every page, or find a thing by its words',
-    run: (v, pos) => read(v, pos),
+    run: (v, pos) => localFirst(read, v, pos),
+  },
+  dates: {
+    summary: 'look up sourced events or page created/updated dates',
+    run: (v, pos) => localFirst(dates, v, pos),
+  },
+  cloud: {
+    summary: 'configure, inspect or run an optional two-way curated-file mirror',
+    run: (v, pos) => cloud(v, pos),
   },
   decline: {
     summary: 'record that your user said no to a pending step, so it stops asking',
@@ -172,6 +183,20 @@ export function helpText() {
     '',
     '  A search takes words, in any order and any form, and prints the best',
     '  matches as the brain wrote them. Each result says which words it lacks.',
+    '',
+    'DATES',
+    '  exposurie dates --on YYYY-MM-DD [--search topic]',
+    '  exposurie dates --from DATE --to DATE [--field events|created|updated|all]',
+    '  --order asc|desc, --limit 1..500, --offset N; --json includes coverage and warnings.',
+    '  Event dates require sourced entries under ## Dated events. See docs/dates.md.',
+    '',
+    'OPTIONAL CLOUD MIRROR',
+    '  exposurie cloud configure --url https://brain.example [--token-env NAME]',
+    '  exposurie cloud status',
+    '  exposurie cloud sync',
+    '  Mirrors curated files only. It does not ingest conversations or schedule itself.',
+    '  When configured, local misses try one mirror refresh. Offline reads still work.',
+    '  See docs/cloud.md for hosting, OAuth, scheduling and conflict review.',
     '',
     'UPDATING',
     // The second command a person types themselves, for the same reason as the

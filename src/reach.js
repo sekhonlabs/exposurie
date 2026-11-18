@@ -86,6 +86,8 @@ export function pointer(cmd = 'exposurie') {
     `    ${cmd} read --search "<topic or project>"`,
     '',
     'Every result names the exact next command. Do not answer from memory first.',
+    `For sourced event dates, use ${cmd} dates --on YYYY-MM-DD or --from DATE --to DATE.`,
+    'Created/updated are page metadata; empty event results may mean incomplete coverage.',
   ].join('\n');
 }
 

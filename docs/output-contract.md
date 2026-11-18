@@ -412,3 +412,12 @@ branch on which kind of command it asked.
 5. If it acts on a brain, resolve it through `detect({ at })` or `resolveVault(at)`
    — never off the pointer directly, or `--at` becomes a flag you accept and
    ignore. That is not hypothetical: see `--at` above.
+
+`dates --json` has a structured result with selected field/range, coverage,
+pagination, sourced items and warnings, plus `exit`. `cloud status --json`
+reports configuration and the last actual mirror run. `cloud sync --json`
+reports uploads, downloads, merges, conflicts and errors. Reviewable conflicts
+use exit 1; an unconfigured cloud never prevents an ordinary local read.
+Both new commands use the same renderer and help/version action guards.
+Cloud operations are asynchronous, bounded requests; dispatch awaits completion
+before the single writer renders the result.

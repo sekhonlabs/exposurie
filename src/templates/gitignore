@@ -2,6 +2,8 @@
 .exposurie/state.json
 .exposurie/staged/
 .exposurie/pending/
+.exposurie/cloud.json
+.exposurie/cloud-sync/
 
 # OS junk
 .DS_Store

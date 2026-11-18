@@ -138,8 +138,8 @@ function expanded(r, n, terms, room) {
  * obeyed at once, after one try, with a query that had failed only because it
  * was a phrase. A miss now says what to try before saying no.
  */
-function searchBody(pages, query, budget) {
-  const { terms, results, searched } = rank(pages, query);
+function searchBody(pages, query, budget, ranking = rank(pages, query)) {
+  const { terms, results, searched } = ranking;
   const scope = `(searched ${searched} ${searched === 1 ? 'page' : 'pages'})`;
   const body = [];
 
@@ -441,7 +441,8 @@ export function read(values = {}, positionals = []) {
 
   // ---- search ----------------------------------------------------------
   if (values.search) {
-    return { code: OK, state, body: searchBody(pages, values.search, budget) };
+    const ranking = rank(pages, values.search);
+    return { code: OK, state, body: searchBody(pages, values.search, budget, ranking), miss: ranking.results.length === 0 };
   }
 
   // ---- the catalog, when nothing is named --------------------------------
@@ -463,6 +464,7 @@ export function read(values = {}, positionals = []) {
     return {
       code: OK,
       state,
+      miss: true,
       body: [`No page is titled ${q(want)}. Searched the brain for those words instead.`, '', ...searchBody(pages, want, budget)],
     };
   }
@@ -503,7 +505,7 @@ export function read(values = {}, positionals = []) {
           body.push(`     RUN:  ${sectionCmd(page.title, values.section, i + 1)}`);
         });
       }
-      return { code: OK, state, body };
+      return { code: OK, state, body, miss: cands.length === 0 };
     }
     const slice = sliceSection(text, heads, hit);
     return {

@@ -79,13 +79,27 @@ anything is created.
 | `scaffold` | creates the brain and copies in the files that become yours |
 | `sync` | stages what is new, so your agent can fold it into the brain |
 | `read` | opens a page or one section of it, lists every page, or finds a thing by its words |
+| `dates` | finds sourced events or page created/updated dates, with ranges and topic filters |
+| `cloud` | configures, inspects or runs an optional two-way mirror of curated files |
 | `decline` | records that you said no to a pending step, so it stops asking |
 | `update` | installs the newest release and brings its own files up to match, keeping your brain |
 | `uninstall` | removes everything exposurie put on this machine, keeping your brain |
 
-The first five are typed by **your agent**. `update` and `uninstall` are
+Retrieval and curation commands are typed by **your agent**. Cloud setup is
+optional. `update` and `uninstall` are
 **yours** — see [Updating](#updating) and [Leaving](#leaving). Every command prints the exact next command to run, and
 `exposurie help` prints the whole list with its flags.
+
+Event dates are distinct from the day a page was imported or updated:
+`exposurie dates --on 2026-06 --search parser --json`. Record source-backed
+entries under `## Dated events`; empty results report their coverage. See
+[date lookup](docs/dates.md) for precision, ranges and pagination.
+
+For clients without a local filesystem, the optional [cloud brain](docs/cloud.md)
+provides authenticated MCP search, fetch, date lookup and explicit saves. Local
+reads stay first; a configured mirror can refresh misses, replicate edits and
+preserve conflicts for review. Hosting, login and scheduling are opt-in. The
+[Cloudflare example](examples/cloudflare/) contains no account or brain data.
 
 **There is one spelling of every command, on every machine.** `exposurie sync`
 is what the tool prints, what goes in the pointer, and what lands in the files
@@ -508,14 +522,12 @@ It is asked rather than assumed because it changes how software we do not own
 behaves on your disk. That is the one class of decision this tool will not make
 for you.
 
-## Nothing is sent anywhere, so the brain watches itself
+## The brain watches itself
 
-exposurie has no telemetry, no endpoint, and no network code. Not "off by
-default" — there is nothing in the package that could phone home, which is the
-only version of that claim you can verify in one grep. The one command that
-reaches the internet at all is `exposurie update`, and even there it is npm
-doing the download — the same as typing the install line — and only when you
-type it.
+exposurie has no telemetry or vendor-operated knowledge endpoint. Normal local
+use sends no brain content anywhere. `exposurie update` asks npm for a release;
+the optional cloud mirror contacts only the server you explicitly configured.
+File replication does not ingest new conversations.
 
 That leaves a real problem: if a brain turns into a pile of session logs, we
 never find out. So the check runs where the brain is, and reports to the only
@@ -631,8 +643,11 @@ platforms' branches are covered by the test suite.
 
 ## Privacy
 
-Your brain is **local files on your disk.** Nothing is uploaded, there is no
-account, and there is no server to send anything to.
+Your brain is **local files on your disk.** By default nothing is uploaded and
+no account or server is required. If you explicitly enable the optional cloud
+mirror, curated pages and allowlisted rules are replicated to your chosen
+server. Raw sources, checkpoints, credentials and Git history are excluded.
+See [cloud setup and erasure](docs/cloud.md) for the exact boundary.
 
 What is written outside your brain folder is a short pointer block in each
 agent's own instructions file, plus a slash command, a skill and one small file

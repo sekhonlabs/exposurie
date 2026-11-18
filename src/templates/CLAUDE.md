@@ -69,6 +69,16 @@ tags: []
   a side.
 - **Absolute dates always.** "Last week" is meaningless to a page read in a
   year. Convert on the way in.
+- **Event dates are separate from page dates.** `created` and `updated` describe
+  this page. For meaningful sourced events, use `## Dated events` on the subject
+  page and one line per event: `- YYYY-MM-DD | decision | What happened. | [[Source Page#Section]]`.
+  Kinds: `event`, `decision`, `milestone`, `deadline`, `planned`, `correction`.
+  A year, month or `start..end` range is valid when that is all the evidence
+  supports. Preserve plans, reported outcomes and dated reversals as such.
+  Sources and named headings must exist. Do not guess dates from imports or
+  ordinary prose. Retrieve with `exposurie dates --on YYYY-MM-DD`; metadata
+  lookup uses `--field created` or `--field updated`. Empty event results can
+  mean incomplete structured coverage. Read source pages for context.
 - **One page is one thing.** Split a page when it has stopped being one subject
   — never because it crossed a line count. There is no length limit here on
   purpose: what matters is that every point of the brain can still be reached,
