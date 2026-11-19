@@ -398,6 +398,13 @@ A command that grows a real payload later simply sets `json`, and its callers
 see the shape improve; `exit` is present either way, so parsing it never has to
 branch on which kind of command it asked.
 
+`dates` has one: the field, range and order asked for, `pages`, `total`,
+`limit`, `offset`, `coverage`, the `items`, and **every** warning. Its text
+output names only the first few lines it had to skip, with a count and the
+command that lists them all, because a brain with forty malformed lines should
+not print forty lines on every lookup. The payload is the complete record, so
+the cap only ever costs the prose. Shape: [`docs/dates.md`](dates.md).
+
 ---
 
 ## Adding a command
@@ -412,3 +419,7 @@ branch on which kind of command it asked.
 5. If it acts on a brain, resolve it through `detect({ at })` or `resolveVault(at)`
    — never off the pointer directly, or `--at` becomes a flag you accept and
    ignore. That is not hypothetical: see `--at` above.
+6. A flag only your command takes goes in its registry entry, under `flags`,
+   never in the dispatcher's shared list. The dispatcher refuses it on every
+   other command at `USAGE`. When `dates` was first proposed its seven flags
+   went in the shared list, and `read --limit banana` exited 0.

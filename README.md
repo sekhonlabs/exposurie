@@ -79,11 +79,12 @@ anything is created.
 | `scaffold` | creates the brain and copies in the files that become yours |
 | `sync` | stages what is new, so your agent can fold it into the brain |
 | `read` | opens a page or one section of it, lists every page, or finds a thing by its words |
+| `dates` | says what happened when: dated events with their sources, or when pages were written |
 | `decline` | records that you said no to a pending step, so it stops asking |
 | `update` | installs the newest release and brings its own files up to match, keeping your brain |
 | `uninstall` | removes everything exposurie put on this machine, keeping your brain |
 
-The first five are typed by **your agent**. `update` and `uninstall` are
+The first six are typed by **your agent**. `update` and `uninstall` are
 **yours** — see [Updating](#updating) and [Leaving](#leaving). Every command prints the exact next command to run, and
 `exposurie help` prints the whole list with its flags.
 
@@ -619,6 +620,31 @@ brains, 23 of the 61 searches agents actually ran came back empty:
 
 In the long task, a fresh session after a sync searched three times, got nothing three times, and went on without rules its brain held on a page titled with the words it had searched for. Under the new search, exactly those 6 missing-knowledge queries still come back empty (as intended), resolving all 17 search failure bugs across the 61 benchmark queries.
 
+## Dates: what happened when
+
+`exposurie dates --on 2026-06` answers "what happened in June" from lines your
+agent records on the page an event is about, under `## Dated events`, one per
+event, each linking the source it came from:
+
+```markdown
+- 2026-06-01 | decision | Chose a streaming parser. | [[Parser Evidence#Decision]]
+```
+
+- **Event dates are not page dates.** A page's `created` and `updated` say when
+  the page was written, which is usually the day of a sync. They are reported
+  only as that (`--field created`), never as when something happened.
+- **Every event comes with its source.** Each one prints the command that opens
+  the section it cites. A source is checked by the rules `read` uses, so that
+  command always opens what it names; a line whose source does not open, whose
+  date is not on a calendar or whose kind is unknown is left out and named.
+- **Precision is kept.** `2026-05` matches any day in May without claiming
+  which. `--from` and `--to` take spans; `--search` takes words the way
+  `read --search` does.
+- **An empty answer is not "nothing happened".** It says how many events the
+  brain has dated at all, and names a search to run before saying no.
+
+It reads the pages `read` reads and writes nothing. See [docs/dates.md](docs/dates.md).
+
 ## Platforms and clients
 
 **Windows and macOS.** Claude Code, Codex and Cursor on both. claude.ai and
@@ -763,6 +789,10 @@ by breaking the thing it guards and watching it fail:
   shell splits it and executed, and the brain has to land where the line said
 - `--json` never answers with prose — a caller that asked for JSON gets JSON
   from every command, including the ones with nothing structured to say
+- `dates` sees exactly the pages `read` sees, and every source command it
+  prints is run and has to open the section it names
+- a flag one command takes is refused by every other command
+- nothing in the shipped source can open a network connection
 - `uninstall` never removes a directory it did not create
 - an update never writes a byte of your brain, and only brings up to date what
   setup wrote outside it — never what you or `uninstall` took out

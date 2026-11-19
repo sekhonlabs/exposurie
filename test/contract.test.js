@@ -43,6 +43,36 @@ test('RULE 1: nothing in the product can ever read stdin', () => {
   }
 });
 
+test('nothing in the shipped source can open a network connection', () => {
+  // The README promises no network code at all -- not "off by default" -- and
+  // says the claim can be verified in one grep. This is that grep, run on every
+  // build, over exactly what npm ships. It went from a promise to a test when a
+  // contributed cloud mirror (PR #6) would have made `read` network-capable.
+  const banned = [
+    /\bnode:(net|http|https|http2|dgram|tls|dns)\b/,
+    /\b(from|import|require)\s*\(?\s*['"](net|http|https|http2|dgram|tls|dns)['"]/,
+    /\bfetch\s*\(/,
+    /\bWebSocket\b/,
+    /\bXMLHttpRequest\b/,
+    /\bEventSource\b/,
+    /\bundici\b/,
+    /\bsendBeacon\b/,
+  ];
+  // A guard that cannot fail is decoration: it has to catch what it keeps out.
+  for (const leak of ["import { request } from 'node:https';", "const http = require('http');", 'await fetch(url);']) {
+    assert.ok(banned.some((re) => re.test(leak)), `the guard misses: ${leak}`);
+  }
+  const shipped = JSON.parse(readFileSync(join(SRC, 'package.json'), 'utf8')).files;
+  const files = shipped.flatMap((top) => allSource(join(SRC, top)));
+  assert.ok(files.length > 20, 'the shipped source was not found, so nothing was checked');
+  for (const file of files) {
+    const code = readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    for (const re of banned) {
+      assert.ok(!re.test(code), `${file} can reach the network (${re}). exposurie has no network code.`);
+    }
+  }
+});
+
 // ---------------------------------------------------------------- rule 2
 test('RULE 2: every actionable line opens with a caps verb', () => {
   const lines = planBlock([
