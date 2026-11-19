@@ -13,6 +13,7 @@ import { init } from './init.js';
 import { scaffold } from './scaffold.js';
 import { sync } from './sync.js';
 import { read } from './read.js';
+import { dates } from './dates.js';
 import { decline } from './decline.js';
 import { update } from './update.js';
 import { uninstall } from './uninstall.js';
@@ -39,6 +40,23 @@ export const COMMANDS = {
   read: {
     summary: 'open a page or one section of it, list every page, or find a thing by its words',
     run: (v, pos) => read(v, pos),
+  },
+  dates: {
+    summary: 'what happened when: dated events with their sources, or when pages were written',
+    // Flags only this command takes, declared beside it rather than for
+    // everyone. Declared globally, every command accepted them: `read --limit
+    // banana` exited 0, and a flag a command accepts and ignores is a bug class
+    // the output contract names. The dispatcher refuses them anywhere else.
+    flags: {
+      on: { type: 'string' },
+      from: { type: 'string' },
+      to: { type: 'string' },
+      field: { type: 'string' },
+      order: { type: 'string' },
+      limit: { type: 'string' },
+      offset: { type: 'string' },
+    },
+    run: (v, pos) => dates(v, pos),
   },
   decline: {
     summary: 'record that your user said no to a pending step, so it stops asking',
@@ -76,6 +94,9 @@ if (keys.join() !== NAMES.join()) {
 }
 
 export { NAMES };
+
+/** Every flag some one command declares for itself, by name. Parsed for all, accepted by its owner only. */
+export const COMMAND_FLAGS = Object.assign({}, ...Object.values(COMMANDS).map((c) => c.flags ?? {}));
 
 /**
  * `--version`, answered like `--help` and rendered like every other command.
@@ -172,6 +193,19 @@ export function helpText() {
     '',
     '  A search takes words, in any order and any form, and prints the best',
     '  matches as the brain wrote them. Each result says which words it lacks.',
+    '',
+    'DATES',
+    ...[
+      ['--on <date>', 'dated events on a day, a month or a year: 2026-06-01, 2026-06, 2026'],
+      ['--from <date> --to <date>', 'dated events across a span, both ends included'],
+      ['--on <date> --search "<words>"', 'only the events whose page or summary holds those words'],
+      ['--field created|updated|all', 'when pages were written, kept apart from events'],
+    ].flatMap(([args, what]) => [`  ${cmd('dates')} ${args}`, `      ${what}`]),
+    '',
+    '  --order asc|desc (newest first by default), --limit 1-500 (50), --offset <n>.',
+    '  An event counts only when a page records it under "## Dated events", one',
+    '  line each, naming a source that opens:',
+    '      - 2026-06-01 | decision | What happened. | [[Source Page#Section]]',
     '',
     'UPDATING',
     // The second command a person types themselves, for the same reason as the

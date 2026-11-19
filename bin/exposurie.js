@@ -9,7 +9,7 @@
 import { parseArgs } from 'node:util';
 import { render } from '../src/output.js';
 import { ERROR, USAGE, footer } from '../src/exit-codes.js';
-import { COMMANDS, NAMES, versionResult } from '../src/commands/registry.js';
+import { COMMANDS, NAMES, COMMAND_FLAGS, versionResult } from '../src/commands/registry.js';
 import { cmd } from '../src/install.js';
 import { refreshOurs } from '../src/refresh.js';
 
@@ -46,6 +46,9 @@ function main(argv) {
         outline: { type: 'boolean' },
         full: { type: 'boolean' },
         because: { type: 'string' },
+        // Flags one command declares for itself in the registry. Parsed here
+        // so the line can be read at all; refused below on any other command.
+        ...COMMAND_FLAGS,
       },
     });
   } catch (e) {
@@ -64,6 +67,22 @@ function main(argv) {
       code: USAGE,
       error: {
         message: `No command named "${asked}". This version has: ${NAMES.join(', ')}.`,
+        fix: `RUN: ${cmd('help')}`,
+      },
+    };
+  }
+
+  // A flag that belongs to another command is the same mistake as a flag that
+  // belongs to none, and gets the same answer the parser gives that one: exit
+  // 2, before anything runs. Accepting it would be worse than refusing it --
+  // `read --limit 5` would print a page as if the limit had been applied.
+  const foreign = Object.keys(parsed.values).find((k) => k in COMMAND_FLAGS && !(entry.flags && k in entry.flags));
+  if (foreign) {
+    const owners = NAMES.filter((n) => COMMANDS[n].flags && foreign in COMMANDS[n].flags);
+    return {
+      code: USAGE,
+      error: {
+        message: `Unknown option '--${foreign}' for ${asked}. Only ${owners.join(', ')} takes it.`,
         fix: `RUN: ${cmd('help')}`,
       },
     };

@@ -69,6 +69,12 @@ tags: []
   a side.
 - **Absolute dates always.** "Last week" is meaningless to a page read in a
   year. Convert on the way in.
+- **Dated events:** when a source dates something that happened, was decided
+  or is planned, add a line under `## Dated events` on the page it is about:
+  `- 2026-06-01 | decision | What happened. | [[Source Page#Section]]`. Date:
+  `YYYY`, `YYYY-MM`, `YYYY-MM-DD` or `start..end`. Kind: event, decision,
+  milestone, deadline, planned or correction. The linked page and heading must
+  exist; `exposurie dates` names any line it skips.
 - **One page is one thing.** Split a page when it has stopped being one subject
   — never because it crossed a line count. There is no length limit here on
   purpose: what matters is that every point of the brain can still be reached,
